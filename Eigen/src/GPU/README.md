@@ -1,8 +1,8 @@
 # Eigen GPU Module (`Eigen/GPU`)
 
-GPU-accelerated dense linear algebra for Eigen users, dispatching to NVIDIA
-CUDA libraries (cuBLAS, cuSOLVER). Requires CUDA 11.4+. Header-only (link
-against CUDA runtime, cuBLAS, and cuSOLVER).
+GPU-accelerated linear algebra for Eigen users, dispatching to NVIDIA CUDA
+libraries (cuBLAS, cuSOLVER, cuFFT, cuSPARSE, cuDSS). Requires CUDA 11.4+;
+cuDSS features require CUDA 12.0+ and a separate cuDSS install. Header-only.
 
 ## Why this module
 
@@ -188,6 +188,71 @@ MatrixXd eigenvecs = es.eigenvectors();
 The cached API keeps the factored matrix on device, avoiding redundant
 host-device transfers and re-factorizations.
 
+### Sparse direct solvers (cuDSS)
+
+Requires cuDSS (separate install, CUDA 12.0+). Define `EIGEN_CUDSS` before
+including `Eigen/GPU` and link with `-lcudss`.
+
+```cpp
+SparseMatrix<double> A = ...;  // symmetric positive definite
+VectorXd b = ...;
+
+// Sparse Cholesky -- one-liner
+GpuSparseLLT<double> llt(A);
+VectorXd x = llt.solve(b);
+
+// Three-phase workflow for repeated solves with the same sparsity pattern
+GpuSparseLLT<double> llt;
+llt.analyzePattern(A);               // symbolic analysis (once)
+llt.factorize(A);                    // numeric factorization
+VectorXd x = llt.solve(b);
+llt.factorize(A_new_values);         // refactorize (reuses symbolic analysis)
+VectorXd x2 = llt.solve(b);
+
+// Sparse LDL^T (symmetric indefinite)
+GpuSparseLDLT<double> ldlt(A);
+VectorXd x = ldlt.solve(b);
+
+// Sparse LU (general non-symmetric)
+GpuSparseLU<double> lu(A);
+VectorXd x = lu.solve(b);
+```
+
+### FFT (cuFFT)
+
+```cpp
+GpuFFT<float> fft;
+
+// 1D complex-to-complex
+VectorXcf X = fft.fwd(x);           // forward
+VectorXcf y = fft.inv(X);           // inverse (scaled by 1/n)
+
+// 1D real-to-complex / complex-to-real
+VectorXcf R = fft.fwd(r);           // returns n/2+1 complex (half-spectrum)
+VectorXf  s = fft.invReal(R, n);    // C2R inverse, caller specifies n
+
+// 2D complex-to-complex
+MatrixXcf B = fft.fwd2d(A);         // 2D forward
+MatrixXcf C = fft.inv2d(B);         // 2D inverse (scaled by 1/(rows*cols))
+
+// Plans are cached and reused across calls with the same size/type.
+```
+
+### Sparse matrix-vector multiply (cuSPARSE)
+
+```cpp
+SparseMatrix<double> A = ...;
+VectorXd x = ...;
+
+GpuSparseContext<double> ctx;
+VectorXd y = ctx.multiply(A, x);            // y = A * x
+VectorXd z = ctx.multiplyT(A, x);           // z = A^T * x
+ctx.multiply(A, x, y, 2.0, 1.0);            // y = 2*A*x + y
+
+// Multiple RHS (SpMM)
+MatrixXd Y = ctx.multiplyMat(A, X);         // Y = A * X
+```
+
 ### Precision control
 
 GEMM dispatch enables tensor core algorithms by default, allowing cuBLAS to
@@ -355,6 +420,59 @@ Future for async device-to-host transfer.
 | `get()` | Block until transfer completes, return host matrix. Idempotent. |
 | `ready()` | Non-blocking poll |
 
+### `GpuSparseLLT<Scalar, UpLo>` API (requires cuDSS)
+
+GPU sparse Cholesky (LL^T) via cuDSS. Three-phase workflow with symbolic
+reuse for repeated solves with the same sparsity pattern. Accepts Eigen
+`SparseMatrix<Scalar, ColMajor, int>` (CSC).
+
+| Method | Sync? | Description |
+|--------|-------|-------------|
+| `GpuSparseLLT(A)` | mixed | Analyze (sync) + factorize (deferred) |
+| `analyzePattern(A)` | yes | Symbolic analysis only (reusable) |
+| `factorize(A)` | deferred | Numeric factorization (same pattern required) |
+| `compute(A)` | mixed | `analyzePattern` + `factorize` |
+| `solve(B)` | yes | Solve, return host matrix |
+| `setOrdering(ord)` | -- | AMD (default), METIS, or RCM |
+| `info()` | lazy | Syncs stream on first call |
+
+### `GpuSparseLDLT<Scalar, UpLo>` API (requires cuDSS)
+
+Sparse LDL^T via cuDSS. Same API as `GpuSparseLLT`.
+
+### `GpuSparseLU<Scalar>` API (requires cuDSS)
+
+Sparse LU via cuDSS. Same API as `GpuSparseLLT` (without `UpLo` parameter).
+
+### `GpuFFT<Scalar>` API
+
+GPU FFT via cuFFT. Plans are cached by (size, type) and reused across calls.
+Inverse transforms are scaled so that `inv(fwd(x)) == x`.
+
+| Method | Description |
+|--------|-------------|
+| `fwd(x)` | 1D C2C forward or 1D R2C forward (returns n/2+1) |
+| `inv(X)` | 1D C2C inverse, scaled by 1/n |
+| `invReal(X, n)` | 1D C2R inverse, scaled by 1/n |
+| `fwd2d(A)` | 2D C2C forward |
+| `inv2d(A)` | 2D C2C inverse, scaled by 1/(rows*cols) |
+
+Supported scalars: `float`, `double`.
+
+### `GpuSparseContext<Scalar>` API
+
+GPU SpMV/SpMM via cuSPARSE. Accepts Eigen `SparseMatrix<Scalar, ColMajor>`.
+
+| Method | Description |
+|--------|-------------|
+| `GpuSparseContext()` | Creates own stream and cuSPARSE handle |
+| `GpuSparseContext(GpuContext&)` | Borrow a GpuContext for same-stream execution |
+| `multiply(A, x)` | `y = A * x` (host vectors) |
+| `multiply(A, x, y, alpha, beta, op)` | `y = alpha * op(A) * x + beta * y` |
+| `multiplyT(A, x)` | `y = A^T * x` |
+| `multiplyMat(A, X)` | `Y = A * X` (SpMM) |
+| `deviceView(A)` | Upload sparse matrix once, return `DeviceSparseView` |
+
 ### Aliasing
 
 Unlike Eigen's `Matrix`, where omitting `.noalias()` triggers a copy to a
@@ -382,6 +500,15 @@ for template compatibility.
 | `GpuQR.h` | `CuSolverSupport.h`, `CuBlasSupport.h` | Dense QR decomposition |
 | `GpuSVD.h` | `CuSolverSupport.h`, `CuBlasSupport.h` | Dense SVD decomposition |
 | `GpuEigenSolver.h` | `CuSolverSupport.h` | Self-adjoint eigenvalue decomposition |
+| `CuFftSupport.h` | `GpuSupport.h`, `<cufft.h>` | cuFFT error macro, type-dispatch wrappers |
+| `GpuFFT.h` | `CuFftSupport.h`, `CuBlasSupport.h` | 1D/2D FFT with plan caching |
+| `CuSparseSupport.h` | `GpuSupport.h`, `<cusparse.h>` | cuSPARSE error macro |
+| `GpuSparseContext.h` | `CuSparseSupport.h` | SpMV/SpMM via cuSPARSE |
+| `CuDssSupport.h` | `GpuSupport.h`, `<cudss.h>` | cuDSS error macro, type traits (optional) |
+| `GpuSparseSolverBase.h` | `CuDssSupport.h` | CRTP base for sparse solvers (optional) |
+| `GpuSparseLLT.h` | `GpuSparseSolverBase.h` | Sparse Cholesky via cuDSS (optional) |
+| `GpuSparseLDLT.h` | `GpuSparseSolverBase.h` | Sparse LDL^T via cuDSS (optional) |
+| `GpuSparseLU.h` | `GpuSparseSolverBase.h` | Sparse LU via cuDSS (optional) |
 
 ## Building and testing
 
@@ -393,6 +520,16 @@ cmake -G Ninja -B build -S . \
   -DEIGEN_TEST_CUSOLVER=ON
 
 cmake --build build --target gpu_cublas gpu_cusolver_llt gpu_cusolver_lu \
-  gpu_cusolver_qr gpu_cusolver_svd gpu_cusolver_eigen gpu_device_matrix
-ctest --test-dir build -R "gpu_cublas|gpu_cusolver|gpu_device" --output-on-failure
+  gpu_cusolver_qr gpu_cusolver_svd gpu_cusolver_eigen \
+  gpu_device_matrix gpu_cufft gpu_cusparse_spmv
+ctest --test-dir build -R "gpu_" --output-on-failure
+
+# Sparse solvers (cuDSS -- separate install required)
+cmake -G Ninja -B build -S . \
+  -DEIGEN_TEST_CUDA=ON \
+  -DEIGEN_CUDA_COMPUTE_ARCH="70" \
+  -DEIGEN_TEST_CUDSS=ON
+
+cmake --build build --target gpu_cudss_llt gpu_cudss_ldlt gpu_cudss_lu
+ctest --test-dir build -R gpu_cudss --output-on-failure
 ```
