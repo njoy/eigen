@@ -3,6 +3,28 @@
 
 $rootdir = Get-Location
 
+# One-time disk hygiene: sweep orphaned MSVC compiler intermediate files (_CL_*)
+# left in system %TEMP% by prior cancelled, aborted, or out-of-memory builds.
+if (Test-Path $env:TEMP) {
+  Get-ChildItem -Path $env:TEMP -Filter "_CL_*" -ErrorAction SilentlyContinue |
+    Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+}
+$parent_temp = "C:\Users\*\AppData\Local\Temp"
+if (Test-Path $parent_temp) {
+  Get-ChildItem -Path $parent_temp -Filter "_CL_*" -ErrorAction SilentlyContinue |
+    Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+}
+
+# Sandbox all MSVC compiler intermediate files into a job-scoped directory (.temp).
+# This isolates concurrent builds and guarantees temporary files are reclaimed
+# when the job completes, preventing system %TEMP% disk exhaustion.
+$job_temp = Join-Path $rootdir ".temp"
+if (-Not (Test-Path $job_temp)) {
+  New-Item -ItemType Directory -Force -Path $job_temp | Out-Null
+}
+$env:TEMP = $job_temp
+$env:TMP = $job_temp
+
 # The affected-tests tier (see scripts/affected_tests.py) passes its selection
 # as a file rather than a variable so the list is not bounded by CI variable
 # limits.  The file holds "NONE" or one target per line; the full-suite form is
@@ -306,6 +328,11 @@ try {
 
   # Return to root directory.
   cd ${rootdir}
+
+  # Immediately reclaim job-local temporary disk space.
+  if (Test-Path $job_temp) {
+    Remove-Item -Recurse -Force $job_temp -ErrorAction SilentlyContinue
+  }
 }
 
 # Explicitly propagate exit code to indicate pass/failure of build command.
