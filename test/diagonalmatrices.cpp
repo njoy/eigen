@@ -713,6 +713,91 @@ void diagonal_matrix_moves() {
   }
 }
 
+template <typename Scalar, int Size>
+void check_unaligned_diagonal_product_size(Index n = Size) {
+  using Vec = Matrix<Scalar, Size, 1>;
+  using RowVec = Matrix<Scalar, 1, Size>;
+  using ColMat = Matrix<Scalar, Size, Size, ColMajor>;
+  using RowMat = Matrix<Scalar, Size, Size, RowMajor>;
+  using StorageVec = Matrix<Scalar, Dynamic, 1>;
+
+  StorageVec storage = random_for_arithmetic<StorageVec>(n + 3);
+  ColMat cm = random_for_arithmetic<ColMat>(n, n);
+  RowMat rm = random_for_arithmetic<RowMat>(n, n);
+  Vec cv = random_for_arithmetic<Vec>(n);
+  RowVec rv = random_for_arithmetic<RowVec>(n);
+
+  for (Index offset = 1; offset <= 3; ++offset) {
+    Map<const Vec> umap(storage.data() + offset, n);
+    Vec ref_diag = umap;
+    DiagonalMatrix<Scalar, Size> ref_dm(ref_diag);
+
+    ColMat cm_res(n, n);
+    RowMat rm_res(n, n);
+    Vec cv_res(n);
+    RowVec rv_res(n);
+
+    internal::set_is_malloc_allowed(false);
+    cm_res.noalias() = umap.asDiagonal() * cm;
+    VERIFY_IS_APPROX(cm_res, ref_dm * cm);
+
+    cm_res.noalias() = cm * umap.asDiagonal();
+    VERIFY_IS_APPROX(cm_res, cm * ref_dm);
+
+    rm_res.noalias() = rm * umap.asDiagonal();
+    VERIFY_IS_APPROX(rm_res, rm * ref_dm);
+
+    rm_res.noalias() = umap.asDiagonal() * rm;
+    VERIFY_IS_APPROX(rm_res, ref_dm * rm);
+
+    cv_res.noalias() = umap.asDiagonal() * cv;
+    VERIFY_IS_APPROX(cv_res, ref_dm * cv);
+
+    rv_res.noalias() = rv * umap.asDiagonal();
+    VERIFY_IS_APPROX(rv_res, rv * ref_dm);
+
+    if (Size != Dynamic) {
+      cm_res.noalias() = storage.template segment<Size>(offset).asDiagonal() * cm;
+      VERIFY_IS_APPROX(cm_res, ref_dm * cm);
+
+      rm_res.noalias() = rm * storage.template segment<Size>(offset).asDiagonal();
+      VERIFY_IS_APPROX(rm_res, rm * ref_dm);
+    } else {
+      cm_res.noalias() = storage.segment(offset, n).asDiagonal() * cm;
+      VERIFY_IS_APPROX(cm_res, ref_dm * cm);
+
+      rm_res.noalias() = rm * storage.segment(offset, n).asDiagonal();
+      VERIFY_IS_APPROX(rm_res, rm * ref_dm);
+    }
+
+    cm_res = cm;
+    cm_res.noalias() += umap.asDiagonal() * cm;
+    VERIFY_IS_APPROX(cm_res, cm + ref_dm * cm);
+
+    rm_res = rm;
+    rm_res.noalias() -= rm * umap.asDiagonal();
+    VERIFY_IS_APPROX(rm_res, rm - rm * ref_dm);
+
+    VERIFY_IS_APPROX((umap.asDiagonal() * cm).sum(), (ref_dm * cm).sum());
+    VERIFY_IS_APPROX((rm * umap.asDiagonal()).sum(), (rm * ref_dm).sum());
+    internal::set_is_malloc_allowed(true);
+  }
+}
+
+template <typename Scalar>
+void unaligned_diagonal_products() {
+  check_unaligned_diagonal_product_size<Scalar, 1>();
+  check_unaligned_diagonal_product_size<Scalar, 2>();
+  check_unaligned_diagonal_product_size<Scalar, 3>();
+  check_unaligned_diagonal_product_size<Scalar, 4>();
+  check_unaligned_diagonal_product_size<Scalar, 6>();
+  check_unaligned_diagonal_product_size<Scalar, 8>();
+  check_unaligned_diagonal_product_size<Scalar, 16>();
+  for (Index n : {Index(4), Index(7), Index(8), Index(16), Index(19)}) {
+    check_unaligned_diagonal_product_size<Scalar, Dynamic>(n);
+  }
+}
+
 EIGEN_DECLARE_TEST(diagonalmatrices) {
   for (int i = 0; i < g_repeat; i++) {
     CALL_SUBTEST_1(diagonalmatrices(Matrix<float, 1, 1>()));
@@ -740,6 +825,11 @@ EIGEN_DECLARE_TEST(diagonalmatrices) {
   CALL_SUBTEST_10(selfadjoint_diagonal_products_block_path<0>());
   CALL_SUBTEST_10(structured_diagonal_aliasing<0>());
   CALL_SUBTEST_10(dense_diagonal_sum_assignment_regressions<0>());
+  CALL_SUBTEST_10(unaligned_diagonal_products<float>());
+  CALL_SUBTEST_10(unaligned_diagonal_products<double>());
+  CALL_SUBTEST_10(unaligned_diagonal_products<int>());
+  CALL_SUBTEST_10(unaligned_diagonal_products<std::complex<float>>());
+  CALL_SUBTEST_10(unaligned_diagonal_products<std::complex<double>>());
   CALL_SUBTEST_11(diagonal_matrix_moves<float>());
   CALL_SUBTEST_11(diagonal_matrix_moves<double>());
   CALL_SUBTEST_11(diagonal_matrix_moves<int>());
