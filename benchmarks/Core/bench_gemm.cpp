@@ -69,6 +69,28 @@ static void eigen_gemm(benchmark::State& state) {
   add_gflops_counter(state);
 }
 
+template <typename T>
+static void BM_EigenGemm_Typed(benchmark::State& state) {
+  using MatT = Matrix<T, Dynamic, Dynamic>;
+  constexpr double flops_per_mul_add = NumTraits<T>::IsComplex ? 8.0 : 2.0;
+  int m = state.range(0);
+  int n = state.range(1);
+  int p = state.range(2);
+  MatT a(m, p);
+  a.setRandom();
+  MatT b(p, n);
+  b.setRandom();
+  MatT c = MatT::Zero(m, n);
+  for (auto _ : state) {
+    c.setZero();
+    gemm(a, b, c);
+    benchmark::DoNotOptimize(c.data());
+    benchmark::ClobberMemory();
+  }
+  state.counters["GFLOPS"] = benchmark::Counter(
+      flops_per_mul_add * m * n * p, benchmark::Counter::kIsIterationInvariantRate, benchmark::Counter::kIs1000);
+}
+
 static void BM_EigenGemm(benchmark::State& state) { eigen_gemm<ColMajor>(state); }
 static void BM_EigenGemmRowMajorLhs(benchmark::State& state) { eigen_gemm<RowMajor>(state); }
 
@@ -101,6 +123,10 @@ static void BM_EigenGemmRowMajorLhs(benchmark::State& state) { eigen_gemm<RowMaj
 
 BENCHMARK(BM_EigenGemm) GEMM_SIZES DEPTH_SWEEP_SIZES;
 BENCHMARK(BM_EigenGemmRowMajorLhs)->Args({256, 256, 256})->Args({1024, 1024, 1024}) DEPTH_SWEEP_SIZES;
+#ifndef EIGEN_BENCH_COMPLEX_SCALAR
+BENCHMARK_TEMPLATE(BM_EigenGemm_Typed, Eigen::half) GEMM_SIZES;
+BENCHMARK_TEMPLATE(BM_EigenGemm_Typed, Eigen::bfloat16) GEMM_SIZES;
+#endif
 
 // The reference below calls sgemm_/dgemm_ directly, so it is real-only.
 #if defined(HAVE_BLAS) && !defined(EIGEN_BENCH_COMPLEX_SCALAR)

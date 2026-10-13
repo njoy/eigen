@@ -83,6 +83,8 @@ void BM_Ploaddup(benchmark::State& state) {
 BENCHMARK(BM_Ploaddup<numext::int32_t>)->Name("Ploaddup_int32");
 BENCHMARK(BM_Ploaddup<float>)->Name("Ploaddup_float");
 BENCHMARK(BM_Ploaddup<double>)->Name("Ploaddup_double");
+BENCHMARK(BM_Ploaddup<Eigen::half>)->Name("Ploaddup_half");
+BENCHMARK(BM_Ploaddup<Eigen::bfloat16>)->Name("Ploaddup_bfloat16");
 
 // ---- psign ----
 
@@ -147,6 +149,41 @@ void BM_Ploadquad(benchmark::State& state) {
 BENCHMARK(BM_Ploadquad<numext::int32_t>)->Name("Ploadquad_int32");
 BENCHMARK(BM_Ploadquad<float>)->Name("Ploadquad_float");
 BENCHMARK(BM_Ploadquad<double>)->Name("Ploadquad_double");
+BENCHMARK(BM_Ploadquad<Eigen::half>)->Name("Ploadquad_half");
+BENCHMARK(BM_Ploadquad<Eigen::bfloat16>)->Name("Ploadquad_bfloat16");
+
+// ---- pcmp_eq ----
+
+template <typename Scalar>
+void BM_PcmpEq(benchmark::State& state) {
+  using Packet = typename packet_traits<Scalar>::type;
+  constexpr int N = packet_traits<Scalar>::size;
+  Scalar a_in[N], b_in[N], out[N];
+  for (int i = 0; i < N; ++i) {
+    a_in[i] = static_cast<Scalar>(i);
+    b_in[i] = static_cast<Scalar>(i % 2 == 0 ? i : i + 1);
+  }
+  Packet a = ploadu<Packet>(a_in);
+  Packet b = ploadu<Packet>(b_in);
+  for (auto _ : state) {
+    benchmark::DoNotOptimize(a);
+    benchmark::DoNotOptimize(b);
+    Packet r = internal::pcmp_eq(a, b);
+    benchmark::DoNotOptimize(r);
+  }
+  pstoreu(out, internal::pcmp_eq(a, b));
+  for (int i = 0; i < N; ++i) {
+    const numext::uint16_t bits = numext::bit_cast<numext::uint16_t>(out[i]);
+    const numext::uint16_t expected = (i % 2 == 0) ? 0xFFFFu : 0x0000u;
+    if (bits != expected) {
+      state.SkipWithError("pcmp_eq mismatch");
+      return;
+    }
+  }
+  state.SetItemsProcessed(state.iterations() * N);
+}
+BENCHMARK(BM_PcmpEq<Eigen::half>)->Name("PcmpEq_half");
+BENCHMARK(BM_PcmpEq<Eigen::bfloat16>)->Name("PcmpEq_bfloat16");
 
 // ---- predux_mul ----
 // Inputs are chosen so the true product is exactly representable regardless

@@ -18,18 +18,19 @@ using namespace Eigen;
 typedef SCALAR Scalar;
 
 // --- DefaultDevice contraction (rank-2, equivalent to matrix multiply) ---
-static void BM_Contraction(benchmark::State& state) {
+template <typename T>
+static void BM_Contraction_Typed(benchmark::State& state) {
   const int M = state.range(0);
   const int N = state.range(1);
   const int K = state.range(2);
 
-  Tensor<Scalar, 2> A(M, K);
-  Tensor<Scalar, 2> B(K, N);
-  Tensor<Scalar, 2> C(M, N);
+  Tensor<T, 2> A(M, K);
+  Tensor<T, 2> B(K, N);
+  Tensor<T, 2> C(M, N);
   A.setRandom();
   B.setRandom();
 
-  using ContractDims = Tensor<Scalar, 2>::DimensionPair;
+  using ContractDims = typename Tensor<T, 2>::DimensionPair;
   Eigen::array<ContractDims, 1> contract_dims = {ContractDims(1, 0)};
 
   for (auto _ : state) {
@@ -40,6 +41,8 @@ static void BM_Contraction(benchmark::State& state) {
   state.counters["GFLOPS"] =
       benchmark::Counter(2.0 * M * N * K, benchmark::Counter::kIsIterationInvariantRate, benchmark::Counter::kIs1000);
 }
+
+static void BM_Contraction(benchmark::State& state) { BM_Contraction_Typed<Scalar>(state); }
 
 // --- ThreadPoolDevice contraction ---
 static void BM_Contraction_ThreadPool(benchmark::State& state) {
@@ -145,6 +148,8 @@ static void BM_Contraction_RowMajor(benchmark::State& state) {
 // clang-format on
 
 BENCHMARK(BM_Contraction) CONTRACTION_SIZES;
+BENCHMARK_TEMPLATE(BM_Contraction_Typed, Eigen::half) CONTRACTION_SIZES;
+BENCHMARK_TEMPLATE(BM_Contraction_Typed, Eigen::bfloat16) CONTRACTION_SIZES;
 BENCHMARK(BM_Contraction_RowMajor) CONTRACTION_SIZES;
 BENCHMARK(BM_Contraction_ThreadPool) CONTRACTION_THREADPOOL_SIZES;
 BENCHMARK(BM_BatchContraction) BATCH_SIZES;

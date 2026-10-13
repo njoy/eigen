@@ -71,6 +71,8 @@ BENCHMARK_TEMPLATE(BM_Pgather, float, 2)->Arg(64)->Arg(4096);
 BENCHMARK_TEMPLATE(BM_Pgather, double, 2)->Arg(64)->Arg(4096);
 BENCHMARK_TEMPLATE(BM_Pgather, float, Dynamic)->ArgsProduct({{64, 4096}, {1, 2, 3, 7}});
 BENCHMARK_TEMPLATE(BM_Pgather, double, Dynamic)->ArgsProduct({{64, 4096}, {1, 2, 3, 7}});
+BENCHMARK_TEMPLATE(BM_Pgather, Eigen::half, Dynamic)->ArgsProduct({{64, 4096}, {1, 2, 3, 7}});
+BENCHMARK_TEMPLATE(BM_Pgather, Eigen::bfloat16, Dynamic)->ArgsProduct({{64, 4096}, {1, 2, 3, 7}});
 BENCHMARK_TEMPLATE(BM_Pgather, std::complex<float>, Dynamic)->ArgsProduct({{64, 4096}, {1, 2, 3, 7}});
 BENCHMARK_TEMPLATE(BM_Pgather, std::complex<double>, Dynamic)->ArgsProduct({{64, 4096}, {1, 2, 3, 7}});
 BENCHMARK_TEMPLATE(BM_Pscatter, float)->ArgsProduct({{64, 4096}, {1, 2, 3, 7}});

@@ -733,20 +733,7 @@ EIGEN_STRONG_INLINE Packet16i cat256i(const Packet8i& a, const Packet8i& b) {
 
 // Helper function for bit packing snippet of low precision comparison.
 // It packs the flags from 32x16 to 16x16.
-EIGEN_STRONG_INLINE __m256i Pack32To16(const Packet16f& rf) {
-  // Split data into small pieces and handle with AVX instructions
-  // to guarantee internal order of vector.
-  // Operation:
-  //   dst[15:0]    := Saturate16(rf[31:0])
-  //   dst[31:16]   := Saturate16(rf[63:32])
-  //   ...
-  //   dst[255:240] := Saturate16(rf[255:224])
-  __m256i lo = _mm256_castps_si256(extract256<0>(rf));
-  __m256i hi = _mm256_castps_si256(extract256<1>(rf));
-  __m128i result_lo = _mm_packs_epi32(_mm256_extractf128_si256(lo, 0), _mm256_extractf128_si256(lo, 1));
-  __m128i result_hi = _mm_packs_epi32(_mm256_extractf128_si256(hi, 0), _mm256_extractf128_si256(hi, 1));
-  return _mm256_insertf128_si256(_mm256_castsi128_si256(result_lo), result_hi, 1);
-}
+EIGEN_STRONG_INLINE __m256i Pack32To16(const Packet16f& rf) { return _mm512_cvtepi32_epi16(_mm512_castps_si512(rf)); }
 
 template <>
 EIGEN_STRONG_INLINE Packet16f pisnan(const Packet16f& a) {
@@ -2116,7 +2103,7 @@ EIGEN_DEVICE_FUNC inline void ptranspose(PacketBlock<Packet16i, 4>& kernel) {
 #ifndef EIGEN_VECTORIZE_AVX512FP16
 template <>
 EIGEN_STRONG_INLINE Packet16h pset1<Packet16h>(const Eigen::half& from) {
-  return _mm256_set1_epi16(from.x);
+  return _mm256_set1_epi16(numext::bit_cast<numext::uint16_t>(from));
 }
 
 template <>
@@ -2152,23 +2139,23 @@ EIGEN_STRONG_INLINE void pstoreu<half>(Eigen::half* to, const Packet16h& from) {
 
 template <>
 EIGEN_STRONG_INLINE Packet16h ploaddup<Packet16h>(const Eigen::half* from) {
-  unsigned short a = from[0].x;
-  unsigned short b = from[1].x;
-  unsigned short c = from[2].x;
-  unsigned short d = from[3].x;
-  unsigned short e = from[4].x;
-  unsigned short f = from[5].x;
-  unsigned short g = from[6].x;
-  unsigned short h = from[7].x;
+  numext::uint16_t a = numext::bit_cast<numext::uint16_t>(from[0]);
+  numext::uint16_t b = numext::bit_cast<numext::uint16_t>(from[1]);
+  numext::uint16_t c = numext::bit_cast<numext::uint16_t>(from[2]);
+  numext::uint16_t d = numext::bit_cast<numext::uint16_t>(from[3]);
+  numext::uint16_t e = numext::bit_cast<numext::uint16_t>(from[4]);
+  numext::uint16_t f = numext::bit_cast<numext::uint16_t>(from[5]);
+  numext::uint16_t g = numext::bit_cast<numext::uint16_t>(from[6]);
+  numext::uint16_t h = numext::bit_cast<numext::uint16_t>(from[7]);
   return _mm256_set_epi16(h, h, g, g, f, f, e, e, d, d, c, c, b, b, a, a);
 }
 
 template <>
 EIGEN_STRONG_INLINE Packet16h ploadquad(const Eigen::half* from) {
-  unsigned short a = from[0].x;
-  unsigned short b = from[1].x;
-  unsigned short c = from[2].x;
-  unsigned short d = from[3].x;
+  numext::uint16_t a = numext::bit_cast<numext::uint16_t>(from[0]);
+  numext::uint16_t b = numext::bit_cast<numext::uint16_t>(from[1]);
+  numext::uint16_t c = numext::bit_cast<numext::uint16_t>(from[2]);
+  numext::uint16_t d = numext::bit_cast<numext::uint16_t>(from[3]);
   return _mm256_set_epi16(d, d, d, d, c, c, c, c, b, b, b, b, a, a, a, a);
 }
 
@@ -2349,10 +2336,15 @@ EIGEN_STRONG_INLINE Packet16h preverse(const Packet16h& a) {
 
 template <>
 EIGEN_STRONG_INLINE Packet16h pgather<Eigen::half, Packet16h>(const Eigen::half* from, Index stride) {
-  return _mm256_set_epi16(from[15 * stride].x, from[14 * stride].x, from[13 * stride].x, from[12 * stride].x,
-                          from[11 * stride].x, from[10 * stride].x, from[9 * stride].x, from[8 * stride].x,
-                          from[7 * stride].x, from[6 * stride].x, from[5 * stride].x, from[4 * stride].x,
-                          from[3 * stride].x, from[2 * stride].x, from[1 * stride].x, from[0 * stride].x);
+  return _mm256_set_epi16(
+      numext::bit_cast<numext::uint16_t>(from[15 * stride]), numext::bit_cast<numext::uint16_t>(from[14 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[13 * stride]), numext::bit_cast<numext::uint16_t>(from[12 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[11 * stride]), numext::bit_cast<numext::uint16_t>(from[10 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[9 * stride]), numext::bit_cast<numext::uint16_t>(from[8 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[7 * stride]), numext::bit_cast<numext::uint16_t>(from[6 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[5 * stride]), numext::bit_cast<numext::uint16_t>(from[4 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[3 * stride]), numext::bit_cast<numext::uint16_t>(from[2 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[1 * stride]), numext::bit_cast<numext::uint16_t>(from[0 * stride]));
 }
 
 template <>
@@ -2594,14 +2586,12 @@ struct unpacket_traits<Packet16bf> {
 
 template <>
 EIGEN_STRONG_INLINE Packet16bf pset1<Packet16bf>(const bfloat16& from) {
-  return _mm256_set1_epi16(from.value);
+  return _mm256_set1_epi16(numext::bit_cast<numext::uint16_t>(from));
 }
 
 template <>
 EIGEN_STRONG_INLINE bfloat16 pfirst<Packet16bf>(const Packet16bf& from) {
-  bfloat16 t;
-  t.value = static_cast<unsigned short>(_mm256_extract_epi16(from, 0));
-  return t;
+  return numext::bit_cast<bfloat16>(static_cast<numext::uint16_t>(_mm256_extract_epi16(from, 0)));
 }
 
 template <>
@@ -2628,23 +2618,23 @@ EIGEN_STRONG_INLINE void pstoreu<bfloat16>(bfloat16* to, const Packet16bf& from)
 
 template <>
 EIGEN_STRONG_INLINE Packet16bf ploaddup<Packet16bf>(const bfloat16* from) {
-  unsigned short a = from[0].value;
-  unsigned short b = from[1].value;
-  unsigned short c = from[2].value;
-  unsigned short d = from[3].value;
-  unsigned short e = from[4].value;
-  unsigned short f = from[5].value;
-  unsigned short g = from[6].value;
-  unsigned short h = from[7].value;
+  numext::uint16_t a = numext::bit_cast<numext::uint16_t>(from[0]);
+  numext::uint16_t b = numext::bit_cast<numext::uint16_t>(from[1]);
+  numext::uint16_t c = numext::bit_cast<numext::uint16_t>(from[2]);
+  numext::uint16_t d = numext::bit_cast<numext::uint16_t>(from[3]);
+  numext::uint16_t e = numext::bit_cast<numext::uint16_t>(from[4]);
+  numext::uint16_t f = numext::bit_cast<numext::uint16_t>(from[5]);
+  numext::uint16_t g = numext::bit_cast<numext::uint16_t>(from[6]);
+  numext::uint16_t h = numext::bit_cast<numext::uint16_t>(from[7]);
   return _mm256_set_epi16(h, h, g, g, f, f, e, e, d, d, c, c, b, b, a, a);
 }
 
 template <>
 EIGEN_STRONG_INLINE Packet16bf ploadquad(const bfloat16* from) {
-  unsigned short a = from[0].value;
-  unsigned short b = from[1].value;
-  unsigned short c = from[2].value;
-  unsigned short d = from[3].value;
+  numext::uint16_t a = numext::bit_cast<numext::uint16_t>(from[0]);
+  numext::uint16_t b = numext::bit_cast<numext::uint16_t>(from[1]);
+  numext::uint16_t c = numext::bit_cast<numext::uint16_t>(from[2]);
+  numext::uint16_t d = numext::bit_cast<numext::uint16_t>(from[3]);
   return _mm256_set_epi16(d, d, d, d, c, c, c, c, b, b, b, b, a, a, a, a);
 }
 
@@ -2885,10 +2875,14 @@ EIGEN_STRONG_INLINE Packet16bf preverse(const Packet16bf& a) {
 template <>
 EIGEN_STRONG_INLINE Packet16bf pgather<bfloat16, Packet16bf>(const bfloat16* from, Index stride) {
   return _mm256_set_epi16(
-      from[15 * stride].value, from[14 * stride].value, from[13 * stride].value, from[12 * stride].value,
-      from[11 * stride].value, from[10 * stride].value, from[9 * stride].value, from[8 * stride].value,
-      from[7 * stride].value, from[6 * stride].value, from[5 * stride].value, from[4 * stride].value,
-      from[3 * stride].value, from[2 * stride].value, from[1 * stride].value, from[0 * stride].value);
+      numext::bit_cast<numext::uint16_t>(from[15 * stride]), numext::bit_cast<numext::uint16_t>(from[14 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[13 * stride]), numext::bit_cast<numext::uint16_t>(from[12 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[11 * stride]), numext::bit_cast<numext::uint16_t>(from[10 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[9 * stride]), numext::bit_cast<numext::uint16_t>(from[8 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[7 * stride]), numext::bit_cast<numext::uint16_t>(from[6 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[5 * stride]), numext::bit_cast<numext::uint16_t>(from[4 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[3 * stride]), numext::bit_cast<numext::uint16_t>(from[2 * stride]),
+      numext::bit_cast<numext::uint16_t>(from[1 * stride]), numext::bit_cast<numext::uint16_t>(from[0 * stride]));
 }
 
 template <>
@@ -3052,21 +3046,13 @@ EIGEN_STRONG_INLINE void pstore<numext::int16_t, Packet32s>(numext::int16_t* out
 template <>
 EIGEN_STRONG_INLINE void pstore<numext::int16_t, Packet16s>(numext::int16_t* out, const Packet16s& x) {
   EIGEN_DEBUG_ALIGNED_STORE
-#if defined(EIGEN_VECTORIZE_AVX512F) && defined(EIGEN_VECTORIZE_AVX512VL)
-  _mm256_store_epi32(out, x);
-#else
   _mm256_store_si256(reinterpret_cast<__m256i*>(out), x);
-#endif
 }
 
 template <>
 EIGEN_STRONG_INLINE void pstore<numext::int16_t, Packet8s>(numext::int16_t* out, const Packet8s& x) {
   EIGEN_DEBUG_ALIGNED_STORE
-#if defined(EIGEN_VECTORIZE_AVX512F) && defined(EIGEN_VECTORIZE_AVX512VL)
-  _mm256_store_epi32(out, x);
-#else
   _mm_store_si128(reinterpret_cast<__m128i*>(out), x);
-#endif
 }
 
 template <>

@@ -202,8 +202,8 @@ struct is_half {
 template <typename Src, typename Tgt>
 struct type_casting_traits {
   enum {
-    VectorizedCast =
-        is_degenerate<Src, Tgt>::value && packet_traits<Src>::Vectorizable && packet_traits<Tgt>::Vectorizable,
+    VectorizedCast = is_degenerate<Src, Tgt>::value && packet_traits<Src>::Vectorizable &&
+                     packet_traits<Tgt>::Vectorizable && (packet_traits<Src>::size == packet_traits<Tgt>::size),
     SrcCoeffRatio = 1,
     TgtCoeffRatio = 1
   };

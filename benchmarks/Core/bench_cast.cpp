@@ -42,3 +42,24 @@ static void BM_CastToFloat(benchmark::State& state) {
 
 BENCHMARK_TEMPLATE(BM_CastToFloat, int64_t)->Arg(64)->Arg(4096)->Arg(262144);
 BENCHMARK_TEMPLATE(BM_CastToFloat, uint64_t)->Arg(64)->Arg(4096)->Arg(262144);
+
+template <typename Src, typename Tgt>
+static void BM_Cast(benchmark::State& state) {
+  const Index size = state.range(0);
+  Array<Src, Dynamic, 1> input = Array<Src, Dynamic, 1>::Random(size);
+  Array<Tgt, Dynamic, 1> output(size);
+  for (auto _ : state) {
+    benchmark::DoNotOptimize(input.data());
+    output = input.template cast<Tgt>();
+    benchmark::DoNotOptimize(output.data());
+    benchmark::ClobberMemory();
+  }
+  state.SetBytesProcessed(state.iterations() * size * (sizeof(Src) + sizeof(Tgt)));
+}
+
+BENCHMARK_TEMPLATE(BM_Cast, float, Eigen::half)->Arg(64)->Arg(4096)->Arg(262144);
+BENCHMARK_TEMPLATE(BM_Cast, float, Eigen::bfloat16)->Arg(64)->Arg(4096)->Arg(262144);
+BENCHMARK_TEMPLATE(BM_Cast, Eigen::half, float)->Arg(64)->Arg(4096)->Arg(262144);
+BENCHMARK_TEMPLATE(BM_Cast, Eigen::bfloat16, float)->Arg(64)->Arg(4096)->Arg(262144);
+BENCHMARK_TEMPLATE(BM_Cast, int32_t, int16_t)->Arg(64)->Arg(4096)->Arg(262144);
+BENCHMARK_TEMPLATE(BM_Cast, int16_t, int32_t)->Arg(64)->Arg(4096)->Arg(262144);
