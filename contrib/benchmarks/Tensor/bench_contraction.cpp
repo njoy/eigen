@@ -129,6 +129,8 @@ static void BM_Contraction_RowMajor(benchmark::State& state) {
   ->Args({256, 256, 1024})->Args({1024, 64, 64})
 
 #define CONTRACTION_THREADPOOL_SIZES \
+  ->Args({4, 1500, 512, 8})->Args({1500, 4, 512, 8}) \
+  ->Args({16, 512, 512, 8})->Args({1, 80, 16384, 8}) \
   ->Args({64, 64, 64, 1})->Args({64, 64, 64, 2})->Args({64, 64, 64, 4}) \
   ->Args({64, 64, 64, 8})->Args({64, 64, 64, 16}) \
   ->Args({256, 256, 256, 1})->Args({256, 256, 256, 2})->Args({256, 256, 256, 4}) \
@@ -146,5 +148,5 @@ static void BM_Contraction_RowMajor(benchmark::State& state) {
 
 BENCHMARK(BM_Contraction) CONTRACTION_SIZES;
 BENCHMARK(BM_Contraction_RowMajor) CONTRACTION_SIZES;
-BENCHMARK(BM_Contraction_ThreadPool) CONTRACTION_THREADPOOL_SIZES;
+BENCHMARK(BM_Contraction_ThreadPool) CONTRACTION_THREADPOOL_SIZES->UseRealTime();
 BENCHMARK(BM_BatchContraction) BATCH_SIZES;

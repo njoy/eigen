@@ -51,9 +51,10 @@ struct CoreThreadPoolDevice {
   template <int PacketSize>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE int calculateLevels(Index size, float cost) const {
     eigen_assert(cost >= 0.0f && "cost must be non-negative");
+    constexpr int kEffectivePacketSize = PacketSize > 8 ? 8 : PacketSize;
     Index numOps = size / PacketSize;
     int actualThreads = numOps < m_pool.NumThreads() ? static_cast<int>(numOps) : m_pool.NumThreads();
-    float totalCost = static_cast<float>(numOps) * cost;
+    float totalCost = static_cast<float>(size / kEffectivePacketSize) * cost;
     float idealThreads = totalCost * m_costFactor;
     if (idealThreads < static_cast<float>(actualThreads)) {
       idealThreads = numext::maxi(idealThreads, 1.0f);

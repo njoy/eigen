@@ -49,6 +49,11 @@ class TensorContractionBlocking {
       computeProductBlockingSizes<LhsScalar, RhsScalar, 1>(kc_, mc_, nc_, num_threads);
     } else {
       computeProductBlockingSizes<LhsScalar, RhsScalar, 1>(kc_, nc_, mc_, num_threads);
+      typedef internal::gebp_traits<LhsScalar, RhsScalar> Traits;
+      const StorageIndex mr = Traits::mr;
+      const StorageIndex nr = Traits::nr;
+      mc_ = numext::mini<StorageIndex>(m, numext::div_ceil<StorageIndex>(mc_, mr) * mr);
+      nc_ = numext::mini<StorageIndex>(n, numext::div_ceil<StorageIndex>(nc_, nr) * nr);
     }
 
     const int rhs_packet_size = internal::packet_traits<RhsScalar>::size;

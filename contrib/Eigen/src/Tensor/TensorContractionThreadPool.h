@@ -1420,12 +1420,14 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
   // (oldgm, oldgn).
   int checkGrain(Index m, Index n, Index bm, Index bn, Index bk, Index gm, Index gn, Index oldgm, Index oldgn,
                  int num_threads, bool shard_by_col) const {
-    const TensorOpCost cost = contractionCost(bm * gm, bn * gn, bm, bn, bk, shard_by_col, true);
+    // When both LHS and RHS inner dimensions are contiguous in memory, packing
+    // streams sequentially through hardware prefetchers and is cheap relative to
+    // the GEMM micro-kernel; only non-contiguous strided inputs require charging
+    // the full uncached LHS/RHS load cost in grain selection.
+    const bool prepacked = this->m_lhs_inner_dim_contiguous && this->m_rhs_inner_dim_contiguous;
+    const TensorOpCost cost = contractionCost(bm * gm, bn * gn, bm, bn, bk, shard_by_col, prepacked);
     double taskSize = TensorCostModel<ThreadPoolDevice>::taskSize(static_cast<double>(bm) * gm * bn * gn, cost);
-    // If the task is too small, then we agree on it regardless of anything
-    // else. Otherwise synchronization overheads will dominate.
-    if (taskSize < 1) return 1;
-    // If it is too large, then we reject it and all larger tasks.
+    // If the task is too large, then we reject it and all larger tasks.
     if (taskSize > 2) return -1;
     // Now we are in presumably good task size range.
     // The main deciding factor here is parallelism. Consider that we have 12
@@ -1436,6 +1438,9 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
     Index nm0 = numext::div_ceil(m, bm);
     Index nn0 = numext::div_ceil(n, bn);
     Index new_tasks = numext::div_ceil(nm0, gm) * numext::div_ceil(nn0, gn);
+    // If the task is too small, agree on coarsening as long as we keep enough
+    // tasks to utilize all threads.
+    if (taskSize < 1 && new_tasks >= num_threads) return 1;
     double new_parallelism =
         static_cast<double>(new_tasks) / (numext::div_ceil<Index>(new_tasks, num_threads) * num_threads);
     Index old_tasks = numext::div_ceil(nm0, oldgm) * numext::div_ceil(nn0, oldgn);
@@ -1447,18 +1452,23 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
 
   TensorOpCost contractionCost(Index m, Index n, Index bm, Index bn, Index bk, bool shard_by_col,
                                bool prepacked) const {
-    const int packed_size = std::min<int>(PacketType<LhsScalar, Device>::size, PacketType<RhsScalar, Device>::size);
-    const int output_packet_size = internal::unpacket_traits<PacketReturnType>::size;
+    // TensorCostModel constants assume 4-wide packets; cap at 4 for full-efficiency
+    // kernels (compute_bandwidth <= 1.0) and at 16 for remainder blocks (where
+    // computeBandwidth already inflates the per-element cycle estimate).
     const double kd = static_cast<double>(bk);
-    double compute_bandwidth = computeBandwidth(false, bm, bn, bk);
+    double compute_bandwidth = computeBandwidth(bm, bn, bk);
+    const int max_packed_size = compute_bandwidth > 1.0 ? 16 : 4;
+    const int packed_size = numext::mini<int>(
+        max_packed_size, numext::mini<int>(PacketType<LhsScalar, Device>::size, PacketType<RhsScalar, Device>::size));
+    const int output_packet_size =
+        numext::mini<int>(max_packed_size, internal::unpacket_traits<PacketReturnType>::size);
     // Computations.
     TensorOpCost cost = TensorOpCost(0, 0, kd * compute_bandwidth, true, packed_size);
     // Output stores.
     cost += TensorOpCost(0, sizeof(CoeffReturnType), 0, true, output_packet_size);
     if (prepacked) {
-      // Packing and kernels are executed in different tasks. When we calculate
-      // task grain size we look only at kernel cost assuming that kernel
-      // is more expensive than packing.
+      // When inputs are already prepacked (or contiguous so sequential packing
+      // is absorbed by hardware prefetching), charge only the kernel cost.
       return cost;
     }
     // Lhs/rhs loads + computations.
@@ -1477,20 +1487,21 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
   // (contraction) dimension (k).
   static bool shardByInnerDim(Index m, Index n, Index k, int num_threads, int num_threads_by_k) {
     std::ptrdiff_t bufsize = m * n * sizeof(Scalar);
+    constexpr Index nr = numext::mini<Index>(Traits::nr, 4);
     bool shard_by_k = false;
     if (n == 1 ||                                      // If mat*vec or...
         num_threads_by_k < 2 ||                        // running single threaded or...
         num_threads_by_k < num_threads ||              // sharding by k gives less parallelism or...
         bufsize > l3CacheSize() / num_threads_by_k ||  // need more buffer space
         // than L3 cache or...
-        k / num_threads_by_k < 2 * Traits::nr) {  // k per thread is tiny.
+        k / num_threads_by_k < 2 * nr) {  // k per thread is tiny.
       shard_by_k = false;
-    } else if (numext::maxi(m, n) / num_threads < Traits::nr ||  // both other dimensions are tiny or...
-                                                                 // k per thread is not small and...
-               (k / num_threads_by_k > 8 * Traits::nr &&
+    } else if (numext::maxi(m, n) / num_threads < nr ||  // both other dimensions are tiny or...
+                                                         // k per thread is not small and...
+               (k / num_threads_by_k > 8 * nr &&
                 // one of the outer dimensions is tiny or sharding by k offers
                 // more parallelism.
-                (numext::mini(m, n) < 2 * Traits::nr || num_threads_by_k > num_threads))) {
+                (numext::mini(m, n) < 2 * nr || num_threads_by_k > num_threads))) {
       shard_by_k = true;
     }
     return shard_by_k;
@@ -1498,8 +1509,8 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
 
   TensorOpCost contractionCostPerInnerDim(Index m, Index n, Index k) const {
     // Compute cost.
-    const int output_packet_size = internal::unpacket_traits<PacketReturnType>::size;
-    TensorOpCost cost(0, 0, (computeBandwidth(true, m, n, k) * m) * n, true, output_packet_size);
+    const int output_packet_size = numext::mini<int>(4, internal::unpacket_traits<PacketReturnType>::size);
+    TensorOpCost cost(0, 0, (computeBandwidth(m, n, k) * m) * n, true, output_packet_size);
     // Output stores.
     cost += TensorOpCost(0, sizeof(CoeffReturnType), 0, true, output_packet_size);
     TensorOpCost lhsCost = this->m_leftImpl.costPerCoeff(true) * m;
@@ -1511,7 +1522,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
   }
 
   int numThreadsInnerDim(Index m, Index n, Index k) const {
-    const int output_packet_size = internal::unpacket_traits<PacketReturnType>::size;
+    const int output_packet_size = numext::mini<int>(4, internal::unpacket_traits<PacketReturnType>::size);
     TensorOpCost cost = contractionCostPerInnerDim(m, n, k);
     double total_parallel_cost = TensorCostModel<ThreadPoolDevice>::totalCost(k, cost);
     // Cost of reduction step accumulating the m*n per-thread buffers into the
@@ -1533,13 +1544,11 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
     return num_threads;
   }
 
-  double computeBandwidth(bool shard_by_col, Index bm, Index bn, Index bk) const {
+  double computeBandwidth(Index bm, Index bn, Index bk) const {
     // Peak VFMA bandwidth is 0.5. However if we have not enough data for
     // vectorization bandwidth drops. The 4.0 and 2.0 bandwidth is determined
     // experimentally.
-    double computeBandwidth = bk == 1                                                                          ? 4.0
-                              : (shard_by_col ? bn : bm) < Traits::nr || (shard_by_col ? bm : bn) < Traits::mr ? 2.0
-                                                                                                               : 0.5;
+    double computeBandwidth = bk == 1 ? 4.0 : (bn < Traits::nr || bm < Traits::mr) ? 2.0 : 0.5;
 #ifndef EIGEN_VECTORIZE_FMA
     // Bandwidth of all of VFMA/MULPS/ADDPS is 0.5 on latest Intel processors.
     // However for MULPS/ADDPS we have dependent sequence of 2 such
