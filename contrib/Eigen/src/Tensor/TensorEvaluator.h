@@ -1052,7 +1052,7 @@ struct TensorEvaluator<const TensorSelectOp<IfArgType, ThenArgType, ElseArgType>
     std::remove_const_t<Scalar> arr[PacketSize];
     EIGEN_UNROLL_LOOP
     for (Index i = 0; i < PacketSize; ++i) {
-      arr[i] = m_condImpl.coeff(index + i) ? Scalar(-1) : Scalar(0);
+      arr[i] = m_condImpl.coeff(index + i) ? Scalar(true) : Scalar(false);
     }
     return TernarySelectOp().template packetOp<PacketReturnType>(m_thenImpl.template packet<LoadMode>(index),
                                                                  m_elseImpl.template packet<LoadMode>(index),

@@ -901,7 +901,7 @@ struct functor_traits<scalar_acosh_op<Scalar>> {
  */
 template <typename Scalar>
 struct scalar_inverse_op {
-  EIGEN_DEVICE_FUNC constexpr inline Scalar operator()(const Scalar& a) const { return Scalar(1) / a; }
+  EIGEN_DEVICE_FUNC constexpr inline Scalar operator()(const Scalar& a) const { return Scalar(true) / a; }
   template <typename Packet>
   EIGEN_DEVICE_FUNC inline Packet packetOp(const Packet& a) const {
     return internal::preciprocal(a);
@@ -1197,11 +1197,11 @@ struct scalar_boolean_not_op {
   // `false` any value `a` that satisfies `a == Scalar(0)`
   // `true` is the complement of `false`
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE Scalar operator()(const Scalar& a) const {
-    return a == Scalar(0) ? Scalar(1) : Scalar(0);
+    return a == Scalar(false) ? Scalar(true) : Scalar(false);
   }
   template <typename Packet>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet packetOp(const Packet& a) const {
-    const Packet cst_one = pset1<Packet>(Scalar(1));
+    const Packet cst_one = pset1<Packet>(Scalar(true));
     EIGEN_IF_CONSTEXPR ((std::is_same<Scalar, bool>::value)) {
       // Boolean packet lanes are canonical, so logical NOT is 1 & ~a.
       return pandnot(cst_one, a);
@@ -1291,7 +1291,7 @@ struct scalar_logistic_op_impl {
 
   template <typename Packet>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet packetOp(const Packet& x) const {
-    const Packet one = pset1<Packet>(T(1));
+    const Packet one = pset1<Packet>(T(true));
     const Packet inf = pset1<Packet>(NumTraits<T>::infinity());
     const Packet e = pexp(x);
     const Packet inf_mask = pcmp_eq(e, inf);
@@ -1304,7 +1304,7 @@ template <typename T>
 struct scalar_logistic_op_impl<T, std::enable_if_t<NumTraits<T>::IsComplex>> {
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE T operator()(const T& x) const {
     const T e = numext::exp(x);
-    return (numext::isinf)(numext::real(e)) ? T(1) : e / (e + T(1));
+    return (numext::isinf)(numext::real(e)) ? T(true) : e / (e + T(true));
   }
 };
 

@@ -39,7 +39,7 @@ struct generic_reciprocal_newton_step {
   static_assert(Steps > 0, "Steps must be at least 1.");
   EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Packet run(const Packet& a, const Packet& approx_a_recip) {
     using Scalar = typename unpacket_traits<Packet>::type;
-    const Packet one = pset1<Packet>(Scalar(1));
+    const Packet one = pset1<Packet>(Scalar(true));
     // Refine the approximation using one Newton-Raphson step:
     //   x_{i} = x_{i-1} * (2 - a * x_{i-1})
     const Packet x = generic_reciprocal_newton_step<Packet, Steps - 1>::run(a, approx_a_recip);

@@ -398,7 +398,7 @@ struct ptrue_impl {
 // Use a value of one for scalars.
 template <typename Scalar>
 struct ptrue_impl<Scalar, std::enable_if_t<is_scalar<Scalar>::value>> {
-  static EIGEN_DEVICE_FUNC inline Scalar run(const Scalar&) { return Scalar(1); }
+  static EIGEN_DEVICE_FUNC inline Scalar run(const Scalar&) { return Scalar(true); }
 };
 
 // For booleans, we can only directly set a valid `bool` value to avoid UB.
@@ -437,11 +437,11 @@ struct pzero_impl {
   }
 };
 
-// For scalars, explicitly set to Scalar(0), since the underlying representation
+// For scalars, explicitly set to Scalar(false), since the underlying representation
 // for zero may not consist of all-zero bits.
 template <typename T>
 struct pzero_impl<T, std::enable_if_t<is_scalar<T>::value>> {
-  static EIGEN_DEVICE_FUNC inline T run(const T& /*a*/) { return T(0); }
+  static EIGEN_DEVICE_FUNC inline T run(const T& /*a*/) { return T(false); }
 };
 
 /** \internal \returns packet of zeros */
@@ -1826,7 +1826,7 @@ EIGEN_DEVICE_FUNC inline void ptranspose(PacketBlock<Packet, size>& /*kernel*/) 
 template <typename Packet>
 EIGEN_DEVICE_FUNC inline Packet preciprocal(const Packet& a) {
   using Scalar = typename unpacket_traits<Packet>::type;
-  return pdiv(pset1<Packet>(Scalar(1)), a);
+  return pdiv(pset1<Packet>(Scalar(true)), a);
 }
 
 /** \internal \returns the reciprocal square-root of \a a (coeff-wise) */

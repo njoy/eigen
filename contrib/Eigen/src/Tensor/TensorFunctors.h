@@ -88,8 +88,8 @@ struct SumReducer {
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE T initialize() const {
-    internal::scalar_cast_op<int, T> conv;
-    return conv(0);
+    internal::scalar_cast_op<bool, T> conv;
+    return conv(false);
   }
   template <typename Packet>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet initializePacket() const {
@@ -133,8 +133,8 @@ struct MeanReducer {
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE T initialize() const {
-    internal::scalar_cast_op<int, T> conv;
-    return conv(0);
+    internal::scalar_cast_op<bool, T> conv;
+    return conv(false);
   }
   template <typename Packet>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet initializePacket() const {
@@ -278,8 +278,8 @@ struct ProdReducer {
     (*accum) = pmul<Packet>(*accum, p);
   }
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE T initialize() const {
-    internal::scalar_cast_op<int, T> conv;
-    return conv(1);
+    internal::scalar_cast_op<bool, T> conv;
+    return conv(true);
   }
   template <typename Packet>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet initializePacket() const {
