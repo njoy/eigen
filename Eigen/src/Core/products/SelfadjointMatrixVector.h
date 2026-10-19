@@ -101,8 +101,7 @@ selfadjoint_matrix_vector_product<Scalar, Index, StorageOrder, UpLo, ConjugateLh
 
       Index starti = FirstTriangular ? 0 : j + 4;
       Index endi = FirstTriangular ? j : size;
-      Index alignedStart = starti + internal::first_default_aligned(&res[starti], endi - starti);
-      Index alignedEnd = alignedStart + ((endi - alignedStart) / PacketSize) * PacketSize;
+      Index alignedEnd = starti + ((endi - starti) / PacketSize) * PacketSize;
 
       // Handle the 4x4 diagonal block: diagonal elements
       res[j] += cjd.pmul(numext::real(A0[j]), t0);
@@ -131,23 +130,14 @@ selfadjoint_matrix_vector_product<Scalar, Index, StorageOrder, UpLo, ConjugateLh
         t6 += cj1.pmul(A2[j + 3], rhs[j + 3]);
       }
 
-      // Pre-alignment scalar loop
-      for (Index i = starti; i < alignedStart; ++i) {
-        res[i] += cj0.pmul(A0[i], t0) + cj0.pmul(A1[i], t1) + cj0.pmul(A2[i], t2) + cj0.pmul(A3[i], t3);
-        t4 += cj1.pmul(A0[i], rhs[i]);
-        t5 += cj1.pmul(A1[i], rhs[i]);
-        t6 += cj1.pmul(A2[i], rhs[i]);
-        t7 += cj1.pmul(A3[i], rhs[i]);
-      }
-
       // Main vectorized loop: 4 matrix column loads, 1 rhs load, 1 result load/store
-      const Scalar* EIGEN_RESTRICT a0It = A0 + alignedStart;
-      const Scalar* EIGEN_RESTRICT a1It = A1 + alignedStart;
-      const Scalar* EIGEN_RESTRICT a2It = A2 + alignedStart;
-      const Scalar* EIGEN_RESTRICT a3It = A3 + alignedStart;
-      const Scalar* EIGEN_RESTRICT rhsIt = rhs + alignedStart;
-      Scalar* EIGEN_RESTRICT resIt = res + alignedStart;
-      for (Index i = alignedStart; i < alignedEnd; i += PacketSize) {
+      const Scalar* EIGEN_RESTRICT a0It = A0 + starti;
+      const Scalar* EIGEN_RESTRICT a1It = A1 + starti;
+      const Scalar* EIGEN_RESTRICT a2It = A2 + starti;
+      const Scalar* EIGEN_RESTRICT a3It = A3 + starti;
+      const Scalar* EIGEN_RESTRICT rhsIt = rhs + starti;
+      Scalar* EIGEN_RESTRICT resIt = res + starti;
+      for (Index i = starti; i < alignedEnd; i += PacketSize) {
         Packet A0i = ploadu<Packet>(a0It);
         a0It += PacketSize;
         Packet A1i = ploadu<Packet>(a1It);
@@ -158,13 +148,13 @@ selfadjoint_matrix_vector_product<Scalar, Index, StorageOrder, UpLo, ConjugateLh
         a3It += PacketSize;
         Packet Bi = ploadu<Packet>(rhsIt);
         rhsIt += PacketSize;
-        Packet Xi = pload<Packet>(resIt);
+        Packet Xi = ploadu<Packet>(resIt);
 
         Xi = pcj0.pmadd(A0i, ptmp0, Xi);
         Xi = pcj0.pmadd(A1i, ptmp1, Xi);
         Xi = pcj0.pmadd(A2i, ptmp2, Xi);
         Xi = pcj0.pmadd(A3i, ptmp3, Xi);
-        pstore(resIt, Xi);
+        pstoreu(resIt, Xi);
         resIt += PacketSize;
 
         ptmp4 = pcj1.pmadd(A0i, Bi, ptmp4);
@@ -210,8 +200,7 @@ selfadjoint_matrix_vector_product<Scalar, Index, StorageOrder, UpLo, ConjugateLh
 
       Index starti = FirstTriangular ? 0 : j + 2;
       Index endi = FirstTriangular ? j : size;
-      Index alignedStart = starti + internal::first_default_aligned(&res[starti], endi - starti);
-      Index alignedEnd = alignedStart + ((endi - alignedStart) / PacketSize) * PacketSize;
+      Index alignedEnd = starti + ((endi - starti) / PacketSize) * PacketSize;
 
       res[j] += cjd.pmul(numext::real(A0[j]), t0);
       res[j + 1] += cjd.pmul(numext::real(A1[j + 1]), t1);
@@ -223,28 +212,23 @@ selfadjoint_matrix_vector_product<Scalar, Index, StorageOrder, UpLo, ConjugateLh
         t2 += cj1.pmul(A0[j + 1], rhs[j + 1]);
       }
 
-      for (Index i = starti; i < alignedStart; ++i) {
-        res[i] += cj0.pmul(A0[i], t0) + cj0.pmul(A1[i], t1);
-        t2 += cj1.pmul(A0[i], rhs[i]);
-        t3 += cj1.pmul(A1[i], rhs[i]);
-      }
-      const Scalar* EIGEN_RESTRICT a0It = A0 + alignedStart;
-      const Scalar* EIGEN_RESTRICT a1It = A1 + alignedStart;
-      const Scalar* EIGEN_RESTRICT rhsIt = rhs + alignedStart;
-      Scalar* EIGEN_RESTRICT resIt = res + alignedStart;
-      for (Index i = alignedStart; i < alignedEnd; i += PacketSize) {
+      const Scalar* EIGEN_RESTRICT a0It = A0 + starti;
+      const Scalar* EIGEN_RESTRICT a1It = A1 + starti;
+      const Scalar* EIGEN_RESTRICT rhsIt = rhs + starti;
+      Scalar* EIGEN_RESTRICT resIt = res + starti;
+      for (Index i = starti; i < alignedEnd; i += PacketSize) {
         Packet A0i = ploadu<Packet>(a0It);
         a0It += PacketSize;
         Packet A1i = ploadu<Packet>(a1It);
         a1It += PacketSize;
         Packet Bi = ploadu<Packet>(rhsIt);
         rhsIt += PacketSize;
-        Packet Xi = pload<Packet>(resIt);
+        Packet Xi = ploadu<Packet>(resIt);
 
         Xi = pcj0.pmadd(A0i, ptmp0, pcj0.pmadd(A1i, ptmp1, Xi));
         ptmp2 = pcj1.pmadd(A0i, Bi, ptmp2);
         ptmp3 = pcj1.pmadd(A1i, Bi, ptmp3);
-        pstore(resIt, Xi);
+        pstoreu(resIt, Xi);
         resIt += PacketSize;
       }
       for (Index i = alignedEnd; i < endi; i++) {
@@ -275,25 +259,20 @@ selfadjoint_matrix_vector_product<Scalar, Index, StorageOrder, UpLo, ConjugateLh
 
       Index starti = FirstTriangular ? 0 : j + 1;
       Index endi = FirstTriangular ? j : size;
-      Index alignedStart = starti + internal::first_default_aligned(&res[starti], endi - starti);
-      Index alignedEnd = alignedStart + ((endi - alignedStart) / PacketSize) * PacketSize;
+      Index alignedEnd = starti + ((endi - starti) / PacketSize) * PacketSize;
 
-      for (Index i = starti; i < alignedStart; ++i) {
-        res[i] += cj0.pmul(A0[i], t1);
-        t2 += cj1.pmul(A0[i], rhs[i]);
-      }
-      const Scalar* EIGEN_RESTRICT a0It = A0 + alignedStart;
-      const Scalar* EIGEN_RESTRICT rhsIt = rhs + alignedStart;
-      Scalar* EIGEN_RESTRICT resIt = res + alignedStart;
-      for (Index i = alignedStart; i < alignedEnd; i += PacketSize) {
+      const Scalar* EIGEN_RESTRICT a0It = A0 + starti;
+      const Scalar* EIGEN_RESTRICT rhsIt = rhs + starti;
+      Scalar* EIGEN_RESTRICT resIt = res + starti;
+      for (Index i = starti; i < alignedEnd; i += PacketSize) {
         Packet A0i = ploadu<Packet>(a0It);
         a0It += PacketSize;
         Packet Bi = ploadu<Packet>(rhsIt);
         rhsIt += PacketSize;
-        Packet Xi = pload<Packet>(resIt);
+        Packet Xi = ploadu<Packet>(resIt);
 
         Xi = pcj0.pmadd(A0i, ptmp1, Xi);
-        pstore(resIt, Xi);
+        pstoreu(resIt, Xi);
         resIt += PacketSize;
 
         ptmp2 = pcj1.pmadd(A0i, Bi, ptmp2);
