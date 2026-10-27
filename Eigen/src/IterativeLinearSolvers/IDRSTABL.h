@@ -259,7 +259,7 @@ bool idrstabl(const MatrixType &mat, const Rhs &rhs, Dest &x, const Precondition
       for (Index q = 1; q <= S; ++q) {
         if (q == 1) {
           // u = r;
-          u.leftCols(j + 1) = r.leftCols(j + 1);
+          u.leftCols(j) = r.leftCols(j);
         } else {
           // u=[u_1;u_2;...;u_j]
           u.leftCols(j) = u.middleCols(1, j);
@@ -303,7 +303,9 @@ bool idrstabl(const MatrixType &mat, const Rhs &rhs, Dest &x, const Precondition
       }
 
       if (!break_normalization) {
-        U = V;
+        U.topRows(N * (j + 1)) = V.topRows(N * (j + 1));
+      } else {
+        U.block(N * j, 0, N, S).setZero();
       }
     }
     if (reset_while) {
