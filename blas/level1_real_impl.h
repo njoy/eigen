@@ -15,39 +15,46 @@
 extern "C" RealScalar EIGEN_BLAS_FUNC_NAME(asum)(EIGEN_BLAS_INT *n, Scalar *px, EIGEN_BLAS_INT *incx) {
   //   std::cerr << "_asum " << *n << " " << *incx << "\n";
 
+  const Eigen::Index n_idx = *n;
+  const Eigen::Index incx_idx = *incx;
+
   Scalar *x = reinterpret_cast<Scalar *>(px);
 
-  if (*n <= 0 || *incx <= 0) return 0;
+  if (n_idx <= 0 || incx_idx <= 0) return 0;
 
-  if (*incx == 1)
-    return make_vector(x, *n).cwiseAbs().sum();
+  if (incx_idx == 1)
+    return make_vector(x, n_idx).cwiseAbs().sum();
   else
-    return make_vector(x, *n, std::abs(*incx)).cwiseAbs().sum();
+    return make_vector(x, n_idx, std::abs(incx_idx)).cwiseAbs().sum();
 }
 
 extern "C" EIGEN_BLAS_INT EIGEN_CAT(i, EIGEN_BLAS_FUNC_NAME(amax))(EIGEN_BLAS_INT *n, Scalar *px,
                                                                    EIGEN_BLAS_INT *incx) {
-  if (*n <= 0 || *incx <= 0) return 0;
+  const Eigen::Index n_idx = *n;
+  const Eigen::Index incx_idx = *incx;
+  if (n_idx <= 0 || incx_idx <= 0) return 0;
   Scalar *x = reinterpret_cast<Scalar *>(px);
 
   Eigen::DenseIndex ret;
-  if (*incx == 1)
-    make_vector(x, *n).cwiseAbs().maxCoeff(&ret);
+  if (incx_idx == 1)
+    make_vector(x, n_idx).cwiseAbs().maxCoeff(&ret);
   else
-    make_vector(x, *n, std::abs(*incx)).cwiseAbs().maxCoeff(&ret);
+    make_vector(x, n_idx, std::abs(incx_idx)).cwiseAbs().maxCoeff(&ret);
   return EIGEN_BLAS_INT(ret) + 1;
 }
 
 extern "C" EIGEN_BLAS_INT EIGEN_CAT(i, EIGEN_BLAS_FUNC_NAME(amin))(EIGEN_BLAS_INT *n, Scalar *px,
                                                                    EIGEN_BLAS_INT *incx) {
-  if (*n <= 0) return 0;
+  const Eigen::Index n_idx = *n;
+  const Eigen::Index incx_idx = *incx;
+  if (n_idx <= 0) return 0;
   Scalar *x = reinterpret_cast<Scalar *>(px);
 
   Eigen::DenseIndex ret;
-  if (*incx == 1)
-    make_vector(x, *n).cwiseAbs().minCoeff(&ret);
+  if (incx_idx == 1)
+    make_vector(x, n_idx).cwiseAbs().minCoeff(&ret);
   else
-    make_vector(x, *n, std::abs(*incx)).cwiseAbs().minCoeff(&ret);
+    make_vector(x, n_idx, std::abs(incx_idx)).cwiseAbs().minCoeff(&ret);
   return EIGEN_BLAS_INT(ret) + 1;
 }
 
@@ -56,56 +63,65 @@ extern "C" Scalar EIGEN_BLAS_FUNC_NAME(dot)(EIGEN_BLAS_INT *n, Scalar *px, EIGEN
                                             EIGEN_BLAS_INT *incy) {
   //   std::cerr << "_dot " << *n << " " << *incx << " " << *incy << "\n";
 
-  if (*n <= 0) return 0;
+  const Eigen::Index n_idx = *n;
+  const Eigen::Index incx_idx = *incx;
+  const Eigen::Index incy_idx = *incy;
+
+  if (n_idx <= 0) return 0;
 
   Scalar *x = reinterpret_cast<Scalar *>(px);
   Scalar *y = reinterpret_cast<Scalar *>(py);
 
-  if (*incx == 1 && *incy == 1)
-    return make_vector(x, *n).dot(make_vector(y, *n));
-  else if (*incx >= 0 && *incy >= 0)
-    return make_vector(x, *n, *incx).dot(make_vector(y, *n, *incy));
-  else if (*incx < 0 && *incy >= 0)
-    return make_vector(x, *n, -*incx).reverse().dot(make_vector(y, *n, *incy));
-  else if (*incx >= 0 && *incy < 0)
-    return make_vector(x, *n, *incx).dot(make_vector(y, *n, -*incy).reverse());
-  else if (*incx < 0 && *incy < 0)
-    return make_vector(x, *n, -*incx).reverse().dot(make_vector(y, *n, -*incy).reverse());
+  if (incx_idx == 1 && incy_idx == 1)
+    return make_vector(x, n_idx).dot(make_vector(y, n_idx));
+  else if (incx_idx >= 0 && incy_idx >= 0)
+    return make_vector(x, n_idx, incx_idx).dot(make_vector(y, n_idx, incy_idx));
+  else if (incx_idx < 0 && incy_idx >= 0)
+    return make_vector(x, n_idx, -incx_idx).reverse().dot(make_vector(y, n_idx, incy_idx));
+  else if (incx_idx >= 0 && incy_idx < 0)
+    return make_vector(x, n_idx, incx_idx).dot(make_vector(y, n_idx, -incy_idx).reverse());
+  else if (incx_idx < 0 && incy_idx < 0)
+    return make_vector(x, n_idx, -incx_idx).reverse().dot(make_vector(y, n_idx, -incy_idx).reverse());
   else
     return 0;
 }
 
 // computes the Euclidean norm of a vector.
 extern "C" Scalar EIGEN_BLAS_FUNC_NAME(nrm2)(EIGEN_BLAS_INT *n, Scalar *px, EIGEN_BLAS_INT *incx) {
-  if (*n <= 0) return 0;
+  const Eigen::Index n_idx = *n;
+  const Eigen::Index incx_idx = *incx;
+  if (n_idx <= 0) return 0;
 
   Scalar *x = reinterpret_cast<Scalar *>(px);
 
-  if (*incx == 1)
-    return make_vector(x, *n).stableNorm();
+  if (incx_idx == 1)
+    return make_vector(x, n_idx).stableNorm();
   else
-    return make_vector(x, *n, std::abs(*incx)).stableNorm();
+    return make_vector(x, n_idx, std::abs(incx_idx)).stableNorm();
 }
 
 EIGEN_BLAS_FUNC(rot)
 (EIGEN_BLAS_INT *n, Scalar *px, EIGEN_BLAS_INT *incx, Scalar *py, EIGEN_BLAS_INT *incy, Scalar *pc, Scalar *ps) {
   //   std::cerr << "_rot " << *n << " " << *incx << " " << *incy << "\n";
-  if (*n <= 0) return;
+  const Eigen::Index n_idx = *n;
+  const Eigen::Index incx_idx = *incx;
+  const Eigen::Index incy_idx = *incy;
+  if (n_idx <= 0) return;
 
   Scalar *x = reinterpret_cast<Scalar *>(px);
   Scalar *y = reinterpret_cast<Scalar *>(py);
   Scalar c = *reinterpret_cast<Scalar *>(pc);
   Scalar s = *reinterpret_cast<Scalar *>(ps);
 
-  StridedVectorType vx(make_vector(x, *n, std::abs(*incx)));
-  StridedVectorType vy(make_vector(y, *n, std::abs(*incy)));
+  StridedVectorType vx(make_vector(x, n_idx, std::abs(incx_idx)));
+  StridedVectorType vy(make_vector(y, n_idx, std::abs(incy_idx)));
 
   Eigen::Reverse<StridedVectorType> rvx(vx);
   Eigen::Reverse<StridedVectorType> rvy(vy);
 
-  if (*incx < 0 && *incy > 0)
+  if (incx_idx < 0 && incy_idx > 0)
     Eigen::internal::apply_rotation_in_the_plane(rvx, vy, Eigen::JacobiRotation<Scalar>(c, s));
-  else if (*incx > 0 && *incy < 0)
+  else if (incx_idx > 0 && incy_idx < 0)
     Eigen::internal::apply_rotation_in_the_plane(vx, rvy, Eigen::JacobiRotation<Scalar>(c, s));
   else
     Eigen::internal::apply_rotation_in_the_plane(vx, vy, Eigen::JacobiRotation<Scalar>(c, s));
@@ -120,11 +136,15 @@ EIGEN_BLAS_FUNC(rot)
 //   param[1..4] = h11, h21, h12, h22
 EIGEN_BLAS_FUNC(rotm)
 (EIGEN_BLAS_INT *n, Scalar *px, EIGEN_BLAS_INT *incx, Scalar *py, EIGEN_BLAS_INT *incy, Scalar *param) {
+  const Eigen::Index n_idx = *n;
+  const Eigen::Index incx_idx = *incx;
+  const Eigen::Index incy_idx = *incy;
+
   Scalar *x = reinterpret_cast<Scalar *>(px);
   Scalar *y = reinterpret_cast<Scalar *>(py);
 
   Scalar flag = param[0];
-  if (*n <= 0 || flag == Scalar(-2)) return;
+  if (n_idx <= 0 || flag == Scalar(-2)) return;
 
   Scalar h11, h12, h21, h22;
   if (flag < Scalar(0)) {
@@ -144,16 +164,16 @@ EIGEN_BLAS_FUNC(rotm)
     h22 = param[4];
   }
 
-  EIGEN_BLAS_INT kx = *incx > 0 ? 0 : (1 - *n) * *incx;
-  EIGEN_BLAS_INT ky = *incy > 0 ? 0 : (1 - *n) * *incy;
+  Eigen::Index kx = incx_idx > 0 ? 0 : (1 - n_idx) * incx_idx;
+  Eigen::Index ky = incy_idx > 0 ? 0 : (1 - n_idx) * incy_idx;
 
-  for (EIGEN_BLAS_INT i = 0; i < *n; ++i) {
+  for (Eigen::Index i = 0; i < n_idx; ++i) {
     Scalar w = x[kx];
     Scalar z = y[ky];
     x[kx] = h11 * w + h12 * z;
     y[ky] = h21 * w + h22 * z;
-    kx += *incx;
-    ky += *incy;
+    kx += incx_idx;
+    ky += incy_idx;
   }
 }
 
