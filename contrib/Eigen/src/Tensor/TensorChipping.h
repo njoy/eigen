@@ -50,6 +50,200 @@ struct DimensionId<Dynamic> {
   const DenseIndex actual_dim;
 };
 
+// Copies count contiguous elements (0 <= count < PacketSize) from src to dst
+// via recursive unpacket_traits<Packet>::half loads/stores and a loop-free
+// power-of-two scalar tail (avoiding variable-trip scalar loops that compilers
+// lower to out-of-line memcpy calls for small strides).
+template <typename Scalar, int MaxCount>
+struct chipping_scalar_tail_copy {
+  template <typename Index>
+  static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void run(Scalar* dst, const Scalar* src, Index count) {
+    EIGEN_IF_CONSTEXPR (MaxCount > 8) {
+      if (count >= 8) {
+        EIGEN_UNROLL_LOOP
+        for (int i = 0; i < 8; ++i) dst[i] = src[i];
+        dst += 8;
+        src += 8;
+        count -= 8;
+      }
+    }
+    EIGEN_IF_CONSTEXPR (MaxCount > 4) {
+      if (count >= 4) {
+        EIGEN_UNROLL_LOOP
+        for (int i = 0; i < 4; ++i) dst[i] = src[i];
+        dst += 4;
+        src += 4;
+        count -= 4;
+      }
+    }
+    EIGEN_IF_CONSTEXPR (MaxCount > 2) {
+      if (count >= 2) {
+        dst[0] = src[0];
+        dst[1] = src[1];
+        dst += 2;
+        src += 2;
+        count -= 2;
+      }
+    }
+    EIGEN_IF_CONSTEXPR (MaxCount > 1) {
+      if (count >= 1) {
+        dst[0] = src[0];
+      }
+    }
+    EIGEN_UNUSED_VARIABLE(dst);
+    EIGEN_UNUSED_VARIABLE(src);
+    EIGEN_UNUSED_VARIABLE(count);
+  }
+};
+
+template <typename Packet, typename Scalar,
+          bool HasHalfPacket = !std::is_same<typename unpacket_traits<Packet>::half, Packet>::value &&
+                               (static_cast<int>(unpacket_traits<typename unpacket_traits<Packet>::half>::size) <
+                                static_cast<int>(unpacket_traits<Packet>::size))>
+struct chipping_subpacket_copy {
+  using HalfPacket = typename unpacket_traits<Packet>::half;
+  static constexpr int PacketSize = unpacket_traits<Packet>::size;
+  static constexpr int HalfSize = unpacket_traits<HalfPacket>::size;
+
+  template <typename Index>
+  static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void run(Scalar* dst, const Scalar* src, Index count) {
+    EIGEN_IF_CONSTEXPR (2 * HalfSize == PacketSize) {
+      if (count >= HalfSize) {
+        pstoreu<Scalar>(dst, ploadu<HalfPacket>(src));
+        dst += HalfSize;
+        src += HalfSize;
+        count -= HalfSize;
+      }
+    } else {
+      while (count >= HalfSize) {
+        pstoreu<Scalar>(dst, ploadu<HalfPacket>(src));
+        dst += HalfSize;
+        src += HalfSize;
+        count -= HalfSize;
+      }
+    }
+    chipping_subpacket_copy<HalfPacket, Scalar>::run(dst, src, count);
+  }
+};
+
+template <typename Packet, typename Scalar>
+struct chipping_subpacket_copy<Packet, Scalar, false> {
+  static constexpr int PacketSize = unpacket_traits<Packet>::size;
+
+  template <typename Index>
+  static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void run(Scalar* dst, const Scalar* src, Index count) {
+    EIGEN_IF_CONSTEXPR (PacketSize <= 16) {
+      chipping_scalar_tail_copy<Scalar, PacketSize>::run(dst, src, count);
+    } else {
+      for (Index i = 0; i < count; ++i) {
+        dst[i] = src[i];
+      }
+    }
+  }
+};
+
+template <typename Packet, typename Scalar, typename ArgEvaluator,
+          bool IsRawPointer = std::is_convertible<typename ArgEvaluator::EvaluatorPointerType, const Scalar*>::value>
+struct chipping_boundary_load {
+  static constexpr int PacketSize = unpacket_traits<Packet>::size;
+
+  template <typename Index>
+  static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void run(const ArgEvaluator& impl, Scalar* values, Index sliceBase,
+                                                        Index rem, Index stride, Index inputStride) {
+    const Scalar* src_ptr = impl.data();
+    EIGEN_IF_CONSTEXPR (!static_cast<bool>(ArgEvaluator::RawAccess)) {
+      if (src_ptr == nullptr) {
+        chipping_boundary_load<Packet, Scalar, ArgEvaluator, false>::run(impl, values, sliceBase, rem, stride,
+                                                                         inputStride);
+        return;
+      }
+    }
+    const Index first = stride - rem;
+    chipping_subpacket_copy<Packet, Scalar>::run(values, src_ptr + sliceBase + rem, first);
+    Index offset = first;
+    const Scalar* next_slice = src_ptr + sliceBase + inputStride;
+    while (PacketSize - offset > stride) {
+      chipping_subpacket_copy<Packet, Scalar>::run(values + offset, next_slice, stride);
+      offset += stride;
+      next_slice += inputStride;
+    }
+    chipping_subpacket_copy<Packet, Scalar>::run(values + offset, next_slice, PacketSize - offset);
+  }
+};
+
+template <typename Packet, typename Scalar, typename ArgEvaluator>
+struct chipping_boundary_load<Packet, Scalar, ArgEvaluator, false> {
+  static constexpr int PacketSize = unpacket_traits<Packet>::size;
+
+  template <typename Index>
+  static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void run(const ArgEvaluator& impl, Scalar* values, Index sliceBase,
+                                                        Index rem, Index stride, Index inputStride) {
+    const Index strideDelta = inputStride - stride;
+    Index inputIndex = sliceBase + rem;
+    Index run = rem;
+    EIGEN_UNROLL_LOOP
+    for (int i = 0; i < PacketSize; ++i) {
+      values[i] = impl.coeff(inputIndex);
+      ++inputIndex;
+      if (++run == stride) {
+        run = 0;
+        inputIndex += strideDelta;
+      }
+    }
+  }
+};
+
+template <typename Packet, typename Scalar, typename ArgEvaluator,
+          bool IsRawPointer = std::is_convertible<typename ArgEvaluator::EvaluatorPointerType, Scalar*>::value>
+struct chipping_boundary_store {
+  static constexpr int PacketSize = unpacket_traits<Packet>::size;
+
+  template <typename Index>
+  static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void run(const ArgEvaluator& impl, const Scalar* values, Index sliceBase,
+                                                        Index rem, Index stride, Index inputStride) {
+    Scalar* dst_ptr = impl.data();
+    EIGEN_IF_CONSTEXPR (!static_cast<bool>(ArgEvaluator::RawAccess)) {
+      if (dst_ptr == nullptr) {
+        chipping_boundary_store<Packet, Scalar, ArgEvaluator, false>::run(impl, values, sliceBase, rem, stride,
+                                                                          inputStride);
+        return;
+      }
+    }
+    const Index first = stride - rem;
+    chipping_subpacket_copy<Packet, Scalar>::run(dst_ptr + sliceBase + rem, values, first);
+    Index offset = first;
+    Scalar* next_slice = dst_ptr + sliceBase + inputStride;
+    while (PacketSize - offset > stride) {
+      chipping_subpacket_copy<Packet, Scalar>::run(next_slice, values + offset, stride);
+      offset += stride;
+      next_slice += inputStride;
+    }
+    chipping_subpacket_copy<Packet, Scalar>::run(next_slice, values + offset, PacketSize - offset);
+  }
+};
+
+template <typename Packet, typename Scalar, typename ArgEvaluator>
+struct chipping_boundary_store<Packet, Scalar, ArgEvaluator, false> {
+  static constexpr int PacketSize = unpacket_traits<Packet>::size;
+
+  template <typename Index>
+  static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void run(const ArgEvaluator& impl, const Scalar* values, Index sliceBase,
+                                                        Index rem, Index stride, Index inputStride) {
+    const Index strideDelta = inputStride - stride;
+    Index inputIndex = sliceBase + rem;
+    Index run = rem;
+    EIGEN_UNROLL_LOOP
+    for (int i = 0; i < PacketSize; ++i) {
+      impl.coeffRef(inputIndex) = values[i];
+      ++inputIndex;
+      if (++run == stride) {
+        run = 0;
+        inputIndex += strideDelta;
+      }
+    }
+  }
+};
+
 }  // end namespace internal
 
 /** A chip is a thin slice, corresponding to a column or a row in a 2-d tensor.
@@ -204,7 +398,7 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> {
   }
 
   template <int LoadMode>
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packet(Index index) const {
+  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE PacketReturnType packet(Index index) const {
     eigen_assert(index + PacketSize - 1 < dimensions().TotalSize());
 
     EIGEN_IF_CONSTEXPR (IsInnerChipping) {
@@ -218,20 +412,16 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> {
     } else {
       const Index idx = index / m_stride;
       const Index rem = index - idx * m_stride;
-      if (rem + PacketSize <= m_stride) {
-        Index inputIndex = idx * m_inputStride + m_inputOffset + rem;
-        return m_impl.template packet<LoadMode>(inputIndex);
+      const Index sliceBase = idx * m_inputStride + m_inputOffset;
+      if (EIGEN_PREDICT_TRUE(rem + PacketSize <= m_stride)) {
+        return m_impl.template packet<LoadMode>(sliceBase + rem);
       } else {
-        // Cross the stride boundary. Fallback to slow path.
+        using RawCoeffType = std::remove_const_t<CoeffReturnType>;
         EIGEN_ALIGN_TO_BOUNDARY(internal::unpacket_traits<PacketReturnType>::alignment)
-        std::remove_const_t<CoeffReturnType> values[PacketSize];
-        EIGEN_UNROLL_LOOP
-        for (int i = 0; i < PacketSize; ++i) {
-          values[i] = coeff(index);
-          ++index;
-        }
-        PacketReturnType rslt = internal::pload<PacketReturnType>(values);
-        return rslt;
+        RawCoeffType values[PacketSize];
+        internal::chipping_boundary_load<PacketReturnType, RawCoeffType, TensorEvaluator<ArgType, Device>>::run(
+            m_impl, values, sliceBase, rem, m_stride, m_inputStride);
+        return internal::pload<PacketReturnType>(values);
       }
     }
   }
@@ -432,7 +622,7 @@ struct TensorEvaluator<TensorChippingOp<DimId, ArgType>, Device>
   }
 
   template <int StoreMode>
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void writePacket(Index index, const PacketReturnType& x) const {
+  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void writePacket(Index index, const PacketReturnType& x) const {
     EIGEN_IF_CONSTEXPR (Base::IsInnerChipping) {
       writePacketInnerChipping<StoreMode>(index, x);
     } else EIGEN_IF_CONSTEXPR (Base::IsOuterChipping) {
@@ -444,19 +634,16 @@ struct TensorEvaluator<TensorChippingOp<DimId, ArgType>, Device>
     } else {
       const Index idx = index / this->m_stride;
       const Index rem = index - idx * this->m_stride;
-      if (rem + PacketSize <= this->m_stride) {
-        const Index inputIndex = idx * this->m_inputStride + this->m_inputOffset + rem;
-        this->m_impl.template writePacket<StoreMode>(inputIndex, x);
+      const Index sliceBase = idx * this->m_inputStride + this->m_inputOffset;
+      if (EIGEN_PREDICT_TRUE(rem + PacketSize <= this->m_stride)) {
+        this->m_impl.template writePacket<StoreMode>(sliceBase + rem, x);
       } else {
-        // Cross stride boundary. Fallback to slow path.
+        using RawCoeffType = std::remove_const_t<CoeffReturnType>;
         EIGEN_ALIGN_TO_BOUNDARY(internal::unpacket_traits<PacketReturnType>::alignment)
-        std::remove_const_t<CoeffReturnType> values[PacketSize];
-        internal::pstore<CoeffReturnType, PacketReturnType>(values, x);
-        EIGEN_UNROLL_LOOP
-        for (int i = 0; i < PacketSize; ++i) {
-          this->coeffRef(index) = values[i];
-          ++index;
-        }
+        RawCoeffType values[PacketSize];
+        internal::pstore<RawCoeffType, PacketReturnType>(values, x);
+        internal::chipping_boundary_store<PacketReturnType, RawCoeffType, TensorEvaluator<ArgType, Device>>::run(
+            this->m_impl, values, sliceBase, rem, this->m_stride, this->m_inputStride);
       }
     }
   }
