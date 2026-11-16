@@ -237,8 +237,8 @@ and every repository path that `AGENTS.md`, a guide under `.agents/`, or a point
 It is blocking in `checkformat:lint`. When a change moves or deletes a file that a guide names, update the guide in
 the same merge request.
 
-The whole-tree codespell invocation used by CI can expose pre-existing findings. Do not modify unrelated files merely to
-make a local broad scan clean.
+A whole-tree codespell scan can expose pre-existing findings; CI checks only files changed since the merge base. Do not
+modify unrelated files merely to make a local broad scan clean.
 
 `checkformat:lint` runs clang-format, codespell, REUSE, the guidance check, and the Python helper tests through
 [`ci/lint/lint.sh`](../ci/lint/lint.sh), with `vermin` checking that the helpers still run on Python 3.12. REUSE, the
