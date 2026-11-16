@@ -175,9 +175,88 @@ inline Scalar abs(const Scalar& x) { return Scalar(std::abs(x.v)); }
 inline Scalar sqrt(const Scalar& x) { return Scalar(std::sqrt(x.v)); }
 }  // namespace adl_non_template_math_test
 
+namespace partial_numeric_limits_test {
+// Custom floating-point scalar whose std::numeric_limits specialization omits IEEE format constants
+// (is_iec559, radix, min_exponent, max_exponent, max_digits10), while NumTraits supplies full traits.
+struct Scalar {
+  double v = 0.0;
+  constexpr Scalar() = default;
+  template <typename U, std::enable_if_t<std::is_arithmetic<U>::value, int> = 0>
+  constexpr Scalar(U x) : v(static_cast<double>(x)) {}
+  explicit constexpr operator double() const { return v; }
+  constexpr Scalar operator+() const { return *this; }
+  constexpr Scalar operator-() const { return Scalar(-v); }
+  friend constexpr Scalar operator+(const Scalar& a, const Scalar& b) { return Scalar(a.v + b.v); }
+  friend constexpr Scalar operator-(const Scalar& a, const Scalar& b) { return Scalar(a.v - b.v); }
+  friend constexpr Scalar operator*(const Scalar& a, const Scalar& b) { return Scalar(a.v * b.v); }
+  friend constexpr Scalar operator/(const Scalar& a, const Scalar& b) { return Scalar(a.v / b.v); }
+  Scalar& operator+=(const Scalar& b) {
+    v += b.v;
+    return *this;
+  }
+  Scalar& operator-=(const Scalar& b) {
+    v -= b.v;
+    return *this;
+  }
+  Scalar& operator*=(const Scalar& b) {
+    v *= b.v;
+    return *this;
+  }
+  Scalar& operator/=(const Scalar& b) {
+    v /= b.v;
+    return *this;
+  }
+  friend constexpr bool operator==(const Scalar& a, const Scalar& b) { return a.v == b.v; }
+  friend constexpr bool operator!=(const Scalar& a, const Scalar& b) { return a.v != b.v; }
+  friend constexpr bool operator<(const Scalar& a, const Scalar& b) { return a.v < b.v; }
+  friend constexpr bool operator<=(const Scalar& a, const Scalar& b) { return a.v <= b.v; }
+  friend constexpr bool operator>(const Scalar& a, const Scalar& b) { return a.v > b.v; }
+  friend constexpr bool operator>=(const Scalar& a, const Scalar& b) { return a.v >= b.v; }
+};
+
+inline Scalar abs(const Scalar& x) { return Scalar(std::abs(x.v)); }
+inline Scalar sqrt(const Scalar& x) { return Scalar(std::sqrt(x.v)); }
+inline Scalar sin(const Scalar& x) { return Scalar(std::sin(x.v)); }
+inline Scalar cos(const Scalar& x) { return Scalar(std::cos(x.v)); }
+inline Scalar atan2(const Scalar& y, const Scalar& x) { return Scalar(std::atan2(y.v, x.v)); }
+inline Scalar exp2(const Scalar& x) { return Scalar(std::exp2(x.v)); }
+inline Scalar fma(const Scalar& x, const Scalar& y, const Scalar& z) { return Scalar(std::fma(x.v, y.v, z.v)); }
+inline Scalar ldexp(const Scalar& x, int exp) { return Scalar(std::ldexp(x.v, exp)); }
+inline bool(isfinite)(const Scalar& x) { return (std::isfinite)(x.v); }
+inline bool(isnan)(const Scalar& x) { return (std::isnan)(x.v); }
+inline bool(isinf)(const Scalar& x) { return (std::isinf)(x.v); }
+}  // namespace partial_numeric_limits_test
+
 namespace std {
 template <>
 class numeric_limits<adl_template_math_test::Scalar> : public numeric_limits<double> {};
+
+template <>
+class numeric_limits<partial_numeric_limits_test::Scalar> {
+ public:
+  static constexpr bool is_specialized = true;
+  static constexpr bool is_signed = true;
+  static constexpr bool is_integer = false;
+  static constexpr bool has_infinity = numeric_limits<double>::has_infinity;
+  static constexpr bool has_quiet_NaN = numeric_limits<double>::has_quiet_NaN;
+  static constexpr bool has_signaling_NaN = numeric_limits<double>::has_signaling_NaN;
+  static constexpr int digits = numeric_limits<double>::digits;
+  static constexpr int digits10 = numeric_limits<double>::digits10;
+
+  static constexpr partial_numeric_limits_test::Scalar(max)() noexcept { return (numeric_limits<double>::max)(); }
+  static constexpr partial_numeric_limits_test::Scalar(min)() noexcept { return (numeric_limits<double>::min)(); }
+  static constexpr partial_numeric_limits_test::Scalar lowest() noexcept { return numeric_limits<double>::lowest(); }
+  static constexpr partial_numeric_limits_test::Scalar epsilon() noexcept { return numeric_limits<double>::epsilon(); }
+  static constexpr partial_numeric_limits_test::Scalar infinity() noexcept {
+    return numeric_limits<double>::infinity();
+  }
+  static constexpr partial_numeric_limits_test::Scalar quiet_NaN() noexcept {
+    return numeric_limits<double>::quiet_NaN();
+  }
+  static constexpr partial_numeric_limits_test::Scalar signaling_NaN() noexcept {
+    return numeric_limits<double>::signaling_NaN();
+  }
+};
 }  // namespace std
 
 namespace Eigen {
@@ -196,6 +275,23 @@ struct NumTraits<adl_non_template_math_test::Scalar> : GenericNumTraits<adl_non_
   static inline Real dummy_precision() { return Real(NumTraits<double>::dummy_precision()); }
   static inline Real highest() { return Real(NumTraits<double>::highest()); }
   static inline Real lowest() { return Real(NumTraits<double>::lowest()); }
+};
+
+template <>
+struct NumTraits<partial_numeric_limits_test::Scalar> : NumTraits<double> {
+  using Real = partial_numeric_limits_test::Scalar;
+  using NonInteger = partial_numeric_limits_test::Scalar;
+  using Nested = partial_numeric_limits_test::Scalar;
+  using Literal = partial_numeric_limits_test::Scalar;
+
+  static constexpr int RequireInitialization = 1;
+
+  static constexpr Real epsilon() { return Real(NumTraits<double>::epsilon()); }
+  static constexpr Real dummy_precision() { return Real(NumTraits<double>::dummy_precision()); }
+  static constexpr Real highest() { return Real(NumTraits<double>::highest()); }
+  static constexpr Real lowest() { return Real(NumTraits<double>::lowest()); }
+  static constexpr Real infinity() { return Real(NumTraits<double>::infinity()); }
+  static constexpr Real quiet_NaN() { return Real(NumTraits<double>::quiet_NaN()); }
 };
 }  // namespace Eigen
 
@@ -570,6 +666,92 @@ void check_adl_non_template_complex() {
   const PlainCS csqrt_neg_zero = numext::sqrt(PlainCS(PlainS(-1.0), PlainS(-0.0)));
   VERIFY_IS_APPROX(csqrt_neg_zero.real().v, 0.0);
   VERIFY_IS_APPROX(csqrt_neg_zero.imag().v, 1.0);
+#endif
+}
+
+void check_partial_numeric_limits_scalar() {
+  using S = partial_numeric_limits_test::Scalar;
+  using Mat4 = Matrix<S, 4, 4>;
+  using Mat42 = Matrix<S, 4, 2>;
+  using Vec2 = Matrix<S, 2, 1>;
+  using Vec4 = Matrix<S, 4, 1>;
+  const double eps = NumTraits<double>::epsilon();
+
+  STATIC_CHECK(!internal::has_iec559_binary_encoding<S>::value);
+  STATIC_CHECK(internal::has_iec559_binary_encoding<double>::value);
+  STATIC_CHECK(!internal::supports_power_of_two_scaling<S>::value);
+  STATIC_CHECK(internal::supports_power_of_two_scaling<double>::value);
+  STATIC_CHECK(!internal::twoprod_full_range_uses_dekker<S>::value);
+#if !defined(EIGEN_VECTORIZE_FMA) && !defined(EIGEN_GPUCC) && !defined(EIGEN_USE_SYCL) && !defined(FP_FAST_FMA) && \
+    !defined(__FP_FAST_FMA)
+  STATIC_CHECK(internal::twoprod_full_range_uses_dekker<double>::value);
+#endif
+  STATIC_CHECK(!internal::use_scaled_comparison<S>::value);
+  STATIC_CHECK(internal::use_scaled_comparison<double>::value);
+  STATIC_CHECK(!internal::unary_pow::is_double_word_base<S>::value);
+  STATIC_CHECK(internal::unary_pow::is_double_word_base<double>::value);
+  STATIC_CHECK(!internal::triangular_solve_packet_traits<S>::Enabled);
+
+  VERIFY(numext::is_exactly_zero_no_flush(S(0.0)));
+  VERIFY(!numext::is_exactly_zero_no_flush(S(1e-310)));
+
+  Vec2 unscaled(S(3e200), S(-4e200));
+  Vec2 scaled;
+  const auto factors = internal::safe_scaling<S>::scale_to(scaled, unscaled, S(4e200));
+  Vec2 restored;
+  internal::safe_scaling<S>::unscale_to(restored, scaled, S(4e200), factors);
+  VERIFY(restored.isApprox(unscaled));
+  VERIFY_LE(std::abs(unscaled.stableNorm().v - 5e200), 8.0 * eps * 5e200);
+
+  Array<S, 3, 1> base(S(-2.0), S(0.5), S(3.0));
+  const Array<S, 3, 1> fifth = base.pow(5);
+  VERIFY_IS_EQUAL(fifth(0).v, -32.0);
+  VERIFY_IS_EQUAL(fifth(1).v, 0.03125);
+  VERIFY_IS_EQUAL(fifth(2).v, 243.0);
+
+  const adl_math_fixture<S> f;
+  const Mat4& ns4 = f.ns4;
+  const Mat4& spd4 = f.spd4;
+  Mat42 rhs42;
+  rhs42.col(0) = f.b4;
+  rhs42.col(1) = Vec4(S(2.0), S(1.0), S(-1.0), S(0.5));
+
+  ColPivHouseholderQR<Mat4> cpqr(ns4);
+  const Mat42 x42 = cpqr.solve(rhs42);
+  VERIFY(rhs42.isApprox(ns4 * x42));
+  VERIFY_LE(adl_max_abs(ns4 * x42 - rhs42), kAdlMathTol);
+
+  SelfAdjointEigenSolver<Mat4> eig(spd4);
+  VERIFY_IS_EQUAL(eig.info(), Success);
+  VERIFY_LE(adl_max_abs(eig.eigenvectors() * eig.eigenvalues().asDiagonal() * eig.eigenvectors().transpose() - spd4),
+            kAdlMathTol);
+
+  JacobiSVD<Mat4, ComputeFullU | ComputeFullV> svd(ns4);
+  VERIFY_LE(adl_max_abs(svd.matrixU() * svd.singularValues().asDiagonal() * svd.matrixV().transpose() - ns4),
+            kAdlMathTol);
+  BDCSVD<Mat4, ComputeFullU | ComputeFullV> bdcsvd(ns4);
+  VERIFY_LE(adl_max_abs(bdcsvd.matrixU() * bdcsvd.singularValues().asDiagonal() * bdcsvd.matrixV().transpose() - ns4),
+            kAdlMathTol);
+
+  const S factor(1.0 + std::ldexp(1.0, -27));
+  S p_hi, p_lo;
+  internal::twoprod_full_range(factor, factor, p_hi, p_lo);
+  VERIFY_IS_EQUAL(p_hi.v, 1.0 + std::ldexp(1.0, -26));
+  VERIFY_IS_EQUAL(p_lo.v, std::ldexp(1.0, -54));
+
+#ifndef _MSC_VER
+  using CS = std::complex<S>;
+  STATIC_CHECK(!internal::unary_pow::is_double_word_base<CS>::value);
+  STATIC_CHECK(!internal::use_scaled_comparison<CS>::value);
+  const CS exp2_val = numext::exp2(CS(S(3.0), S(0.75)));
+  const std::complex<double> exp2_ref = std::exp2(3.0) * std::polar(1.0, 0.75 * std::log(2.0));
+  VERIFY_LE(std::abs(exp2_val.real().v - exp2_ref.real()), 4.0 * eps * std::abs(exp2_ref));
+  VERIFY_LE(std::abs(exp2_val.imag().v - exp2_ref.imag()), 4.0 * eps * std::abs(exp2_ref));
+  const double tiny_phase = std::ldexp(1.0, -1030);
+  const CS exp2_subnormal = numext::exp2(CS(S(4.0), S(tiny_phase)));
+  VERIFY_IS_EQUAL(exp2_subnormal.real().v, 16.0);
+  VERIFY_LE(std::abs(exp2_subnormal.imag().v - 16.0 * tiny_phase * std::log(2.0)),
+            4.0 * eps * 16.0 * tiny_phase * std::log(2.0));
 #endif
 }
 
@@ -2033,6 +2215,7 @@ EIGEN_DECLARE_TEST(numext) {
     CALL_SUBTEST_6(check_adl_complex_schur<adl_template_math_test::Scalar>());
     CALL_SUBTEST_7(check_adl_sparse_iterative_solvers<adl_template_math_test::Scalar>());
     CALL_SUBTEST_8(check_adl_non_template_decompositions<adl_non_template_math_test::Scalar>());
+    CALL_SUBTEST_8(check_partial_numeric_limits_scalar());
     CALL_SUBTEST_9(check_adl_non_template_complex<adl_non_template_math_test::Scalar>());
     VERIFY_IS_EQUAL(numext::log10(log10_adl_test::Scalar{10.0}).value, 1.0);
     VERIFY_IS_APPROX(numext::log10(std::complex<double>(2.0, 3.0)), std::log10(std::complex<double>(2.0, 3.0)));

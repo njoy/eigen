@@ -22,8 +22,16 @@ namespace internal {
 // Keep custom scalars on the algebraic path: exponent scaling requires binary floating-point arithmetic.
 template <typename Scalar>
 struct use_scaled_comparison
-    : bool_constant<(std::is_floating_point<Scalar>::value && std::numeric_limits<Scalar>::radix == 2) ||
-                    std::is_same<Scalar, half>::value || std::is_same<Scalar, bfloat16>::value> {};
+    : bool_constant<std::is_same<Scalar, half>::value || std::is_same<Scalar, bfloat16>::value> {};
+
+template <>
+struct use_scaled_comparison<float> : bool_constant<std::numeric_limits<float>::radix == 2> {};
+
+template <>
+struct use_scaled_comparison<double> : bool_constant<std::numeric_limits<double>::radix == 2> {};
+
+template <>
+struct use_scaled_comparison<long double> : bool_constant<std::numeric_limits<long double>::radix == 2> {};
 
 template <typename RealScalar>
 struct use_scaled_comparison<std::complex<RealScalar>> : use_scaled_comparison<RealScalar> {};

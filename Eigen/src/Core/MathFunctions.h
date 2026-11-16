@@ -1153,6 +1153,20 @@ struct madd_impl<Scalar, std::enable_if_t<scalar_madd_uses_fma<Scalar>::value>> 
   }
 };
 
+// IEEE 754 binary32 or binary64 representation; specialized so custom scalars need not define is_iec559 or radix.
+template <typename Scalar>
+struct has_iec559_binary_encoding : false_type {};
+
+template <>
+struct has_iec559_binary_encoding<float>
+    : bool_constant<std::numeric_limits<float>::is_iec559 && std::numeric_limits<float>::radix == 2 &&
+                    sizeof(float) == sizeof(numext::uint32_t)> {};
+
+template <>
+struct has_iec559_binary_encoding<double>
+    : bool_constant<std::numeric_limits<double>::is_iec559 && std::numeric_limits<double>::radix == 2 &&
+                    sizeof(double) == sizeof(numext::uint64_t)> {};
+
 // Representation properties shared by operations that inspect an IEEE-style binary floating-point value.
 template <typename Scalar>
 struct binary_floating_point_traits {
@@ -1258,10 +1272,7 @@ namespace numext {
 
 template <typename X>
 EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool is_exactly_zero_no_flush(const X& x) {
-  constexpr bool HasBinaryEncoding = (std::is_same<X, float>::value || std::is_same<X, double>::value) &&
-                                     std::numeric_limits<X>::is_iec559 && std::numeric_limits<X>::radix == 2 &&
-                                     (sizeof(X) == sizeof(uint32_t) || sizeof(X) == sizeof(uint64_t));
-  return internal::is_exactly_zero_no_flush_impl(x, internal::bool_constant<HasBinaryEncoding>());
+  return internal::is_exactly_zero_no_flush_impl(x, internal::has_iec559_binary_encoding<X>());
 }
 
 #if !defined(EIGEN_GPUCC)
